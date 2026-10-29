@@ -37,6 +37,13 @@ function loadBiome(name) {
 }
 
 const artifacts = {
+  parkplan: {
+    type: 'RESEARCH PLAN · 硕士论文研究计划',
+    title: '近邻公园植被空间与老年人活动机会',
+    meta: '2026 · KOREAN · 10 SLIDES',
+    description: '以郑州为研究地区，比较植被空间的潜在活动机会、使用者感知与实际利用，讨论相关空间条件。附逐页韩语发表稿。',
+    links: [['查看韩语研究计划', '../park-research-plan/'], ['查看韩语发表稿', '../park-research-plan/script.html']]
+  },
   eco: {
     type: 'ACADEMIC PRESENTATION · 学术发表',
     title: '生态翻译学',
