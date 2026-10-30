@@ -1,0 +1,1191 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>生态翻译学 · 钴蓝网格修订版</title><link rel="stylesheet" href="fonts.css"><style>
+  :root {
+    --paper:    #F0EBDE;   /* warm cream / ivory paper canvas */
+    --paper-2:  #E6E0CE;
+    --ink:      #1F2BE0;   /* electric cobalt / royal blue */
+    --ink-soft: #5560E5;   /* lighter cobalt for secondary marks */
+    --grid:     rgba(31, 43, 224, 0.10);  /* very faint blue grid */
+    --rule:     #1F2BE0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #0a0a0a; }
+  body {
+    font-family: 'Hanken Grotesk', 'Helvetica Neue', sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+  }
+
+  /* Deck wrapper — fills the viewport */
+  .deck { position: fixed; inset: 0; display: grid; place-items: center; }
+  .stage {
+    position: relative;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+    background: var(--paper);
+  }
+
+  /* Graph-paper grid behind every slide */
+  .stage::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: clamp(28px, 2.2vw, 44px) clamp(28px, 2.2vw, 44px);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .slide {
+    position: absolute; inset: 0;
+    opacity: 0; pointer-events: none;
+    transition: opacity 280ms ease;
+    z-index: 2;
+  }
+  .slide.active { opacity: 1; pointer-events: auto; }
+
+  /* ─── TYPE SYSTEM ──────────────────────────────────────────── */
+  .disp {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    line-height: 0.92;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .body-tx {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .micro {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink);
+  }
+  .mono {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-weight: 400;
+    color: var(--ink);
+  }
+
+  /* Single page-number marker, shared across slides.
+     Sits ABOVE the bottom hairline rule, with deliberate space between the
+     two so the chrome elements don't collide on any slide. */
+  .pagenum {
+    position: absolute;
+    right: clamp(28px, 2.4vw, 48px);
+    bottom: clamp(48px, 4.8vh, 76px);
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(11px, 0.82vw, 13px);
+    color: var(--ink);
+    letter-spacing: 0.06em;
+    z-index: 9;
+  }
+
+  /* Top + bottom slim hairlines that frame each slide.
+     Echo of the reference's thin rule above and below the composition. The
+     bottom rule is pinned at the slide's lower edge so the page number,
+     which sits above it, has clear space and never overlaps. */
+  .hairlines::before,
+  .hairlines::after {
+    content: '';
+    position: absolute;
+    left: clamp(36px, 3.6vw, 80px);
+    right: clamp(36px, 3.6vw, 80px);
+    height: 1.5px;
+    background: var(--ink);
+    z-index: 4;
+    pointer-events: none;
+  }
+  .hairlines::before { top: clamp(28px, 2.6vh, 48px); }
+  .hairlines::after  { bottom: clamp(20px, 2vh, 32px); }
+
+  /* Fixed nav hint — sits above the bottom hairline, same vertical level
+     as the page number on the opposite side, so neither overlaps the rule. */
+  .nav-hint {
+    position: fixed;
+    left: clamp(36px, 3.6vw, 80px);
+    bottom: clamp(48px, 4.8vh, 76px);
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(10px, 0.75vw, 12px);
+    color: var(--ink);
+    letter-spacing: 0.08em;
+    opacity: 0.4;
+    z-index: 12;
+    pointer-events: none;
+  }
+
+  /* ─── DECORATIVE: pixel-glitch stair (reusable SVG) ─────────── */
+  /* The SVG below renders a column of stair-stepped rectangles, each
+     filled with vertical scanlines — a direct echo of the reference's
+     "pixelated" shape on the right side. Decorative only, pointer-events
+     disabled, sits behind content. */
+  .pixel-glitch {
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .pixel-glitch svg { display: block; width: 100%; height: 100%; }
+
+  /* ─── DECORATIVE: small QR-style block ───────────────────────── */
+  /* The QR is paper-backgrounded so it reads as a discrete patch when it
+     overlaps the pixel-glitch column behind it — without the paper fill,
+     the empty grid cells let the glitch's vertical scanlines bleed
+     through and the QR loses its shape. */
+  .qr-block {
+    position: absolute;
+    pointer-events: none;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    gap: 1.5px;
+    background: var(--paper);
+    padding: 4px;
+    box-shadow: 0 0 0 1.5px var(--paper);
+  }
+  .qr-block .px { background: var(--paper); }
+  .qr-block .px.on { background: var(--ink); }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 1 — COVER
+     ────────────────────────────────────────────────────────────── */
+  .s-cover { background: var(--paper); }
+
+  .s-cover .titlewrap {
+    position: absolute;
+    left: clamp(36px, 3.6vw, 80px);
+    top: clamp(80px, 9vh, 160px);
+    z-index: 5;
+    max-width: 60%;
+  }
+  .s-cover .title {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(100px, min(11vw, 18vh), 200px);
+    line-height: 0.92;
+    letter-spacing: -0.008em;
+    color: var(--ink);
+  }
+  .s-cover .subkicker {
+    margin-top: clamp(20px, 2.2vh, 36px);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .s-cover .subkicker .l {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: clamp(13px, 1vw, 16px);
+    color: var(--ink);
+  }
+  .s-cover .subkicker .ed {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-size: clamp(28px, min(2.8vw, 4.6vh), 50px);
+    line-height: 1.1;
+    color: var(--ink);
+  }
+
+  /* Pixel-glitch column on the right side of the cover */
+  .s-cover .pixel-glitch {
+    top: clamp(60px, 6vh, 120px);
+    right: clamp(36px, 3.6vw, 80px);
+    width: clamp(280px, 32vw, 560px);
+    bottom: clamp(110px, 12vh, 200px);
+  }
+
+  /* QR block top-right */
+  .s-cover .qr-block {
+    top: clamp(60px, 6vh, 120px);
+    right: clamp(120px, 8vw, 200px);
+    width: clamp(58px, 4.2vw, 84px);
+    height: clamp(58px, 4.2vw, 84px);
+  }
+
+  /* Vertical right-side label column (reads as a stack of micro-text,
+     replacing the Korean column in the reference). */
+  .s-cover .vstack {
+    position: absolute;
+    right: clamp(36px, 3.6vw, 60px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    display: flex; flex-direction: column;
+    gap: clamp(10px, 1.2vh, 18px);
+    align-items: end;
+  }
+  .s-cover .vstack .v-row {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(12px, 0.9vw, 15px);
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+
+  /* Footer row */
+  .s-cover .cfooter {
+    /* Constrained to the left half so it never runs under the right-side
+       pixel-glitch column on any viewport. */
+    position: absolute;
+    left: clamp(36px, 3.6vw, 80px);
+    right: clamp(680px, 40vw, 880px);
+    bottom: clamp(82px, 8vh, 120px);
+    display: flex; justify-content: flex-start; align-items: end;
+    z-index: 5;
+    gap: clamp(28px, 3vw, 56px);
+  }
+  .s-cover .cfooter .colf {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: clamp(14px, 0.92vw, 15px);
+    line-height: 1.45;
+    color: var(--ink);
+  }
+  .s-cover .cfooter .colf .ftag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em;
+    font-size: clamp(11px, 0.78vw, 13px);
+    margin-bottom: 4px;
+    color: var(--ink);
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 2 — MANIFESTO
+     ────────────────────────────────────────────────────────────── */
+  .s-manifesto { background: var(--paper); }
+  .s-manifesto .stmt-wrap {
+    position: absolute;
+    left: clamp(60px, 8vw, 160px);
+    right: clamp(60px, 8vw, 160px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    text-align: left;
+  }
+  .s-manifesto .stmt {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(56px, min(6.4vw, 11vh), 120px);
+    line-height: 1.05;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .s-manifesto .stmt .roman {
+    font-style: normal;
+    font-weight: 500;
+  }
+  .s-manifesto .attr {
+    margin-top: clamp(28px, 3vh, 50px);
+    display: flex; gap: clamp(14px, 1.4vw, 24px); align-items: center;
+    border-top: 1px solid var(--ink);
+    padding-top: clamp(10px, 1.2vh, 18px);
+  }
+  .s-manifesto .attr .who {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: clamp(12px, 0.85vw, 14px);
+    color: var(--ink);
+  }
+  .s-manifesto .attr .meta-tag {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(12px, 0.82vw, 14px);
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    opacity: 0.78;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 3 — INDEX (numbered list of trends)
+     ────────────────────────────────────────────────────────────── */
+  .s-index { background: var(--paper); }
+  .s-index .frame {
+    position: absolute;
+    inset: clamp(76px, 8vh, 130px) clamp(36px, 3.6vw, 80px) clamp(100px, 10vh, 150px);
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    gap: clamp(20px, 2.2vh, 36px);
+    z-index: 5;
+  }
+  .s-index .topbar {
+    display: flex; align-items: end; justify-content: space-between;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: clamp(12px, 1.4vh, 22px);
+    gap: 30px;
+  }
+  .s-index .topbar .h {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-size: clamp(48px, min(5vw, 8.5vh), 100px);
+    line-height: 0.95;
+    color: var(--ink);
+  }
+  .s-index .topbar .lab-tag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em;
+    font-size: clamp(12px, 0.9vw, 14px);
+    color: var(--ink); text-align: right;
+  }
+  .s-index .list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    gap: clamp(14px, 2vh, 28px) clamp(28px, 3vw, 56px);
+  }
+  .s-index .row { align-self: stretch; }
+  .s-index .row {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: clamp(12px, 1.4vw, 22px);
+    border-bottom: 1px solid rgba(31, 43, 224, 0.18);
+    padding-bottom: clamp(12px, 1.4vh, 20px);
+  }
+  .s-index .row .num-tag {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(13px, 0.9vw, 15px);
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    padding-top: 6px;
+  }
+  .s-index .row h3 {
+    margin: 0 0 6px 0;
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(26px, 2vw, 40px);
+    line-height: 1.05;
+    color: var(--ink);
+  }
+  .s-index .row p {
+    margin: 0;
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: clamp(14px, 0.95vw, 15px);
+    line-height: 1.5;
+    color: var(--ink);
+    max-width: 92%;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 4 — CHAPTER (display + intro on glitch background)
+     ────────────────────────────────────────────────────────────── */
+  .s-chapter { background: var(--paper); }
+  .s-chapter .pixel-glitch {
+    top: clamp(60px, 6vh, 120px);
+    right: clamp(0px, 0vw, 0px);
+    width: clamp(220px, 26vw, 460px);
+    bottom: clamp(110px, 12vh, 200px);
+    opacity: 0.75;
+  }
+  .s-chapter .frame {
+    position: absolute;
+    left: clamp(36px, 3.6vw, 80px);
+    right: clamp(280px, 30vw, 540px);
+    top: clamp(80px, 9vh, 140px);
+    bottom: clamp(110px, 11vh, 170px);
+    display: flex; flex-direction: column;
+    justify-content: center;
+    z-index: 5;
+    gap: clamp(18px, 2vh, 32px);
+  }
+  .s-chapter .nm-tag {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(13px, 0.92vw, 15px);
+    color: var(--ink);
+    letter-spacing: 0.06em;
+  }
+  .s-chapter .ttl {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(56px, min(6vw, 10vh), 130px);
+    line-height: 1.0;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .s-chapter .lede {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 400;
+    font-size: clamp(15px, 1vw, 18px);
+    line-height: 1.5;
+    color: var(--ink);
+    max-width: 56ch;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 5 — DATA (vertical pixel-stack bar chart)
+     ────────────────────────────────────────────────────────────── */
+  .s-data { background: var(--paper); }
+  .s-data .frame {
+    position: absolute;
+    inset: clamp(76px, 8vh, 130px) clamp(36px, 3.6vw, 80px) clamp(100px, 10vh, 150px);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: clamp(20px, 2vh, 36px);
+    z-index: 5;
+  }
+  .s-data .topbar {
+    display: flex; align-items: end; justify-content: space-between;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: clamp(12px, 1.4vh, 22px);
+    gap: 30px;
+  }
+  .s-data .topbar .h {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-size: clamp(46px, min(4.8vw, 8.2vh), 92px);
+    line-height: 0.95;
+    color: var(--ink);
+  }
+  .s-data .topbar .lab-tag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em;
+    font-size: clamp(12px, 0.9vw, 14px);
+    color: var(--ink); text-align: right;
+  }
+  .s-data .body {
+    display: grid;
+    grid-template-columns: 0.8fr 1.6fr;
+    gap: clamp(28px, 3vw, 56px);
+  }
+  .s-data .col-a {
+    display: flex; flex-direction: column; justify-content: center;
+    gap: clamp(20px, 2.4vh, 36px);
+  }
+  .s-data .stat .vbig {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(110px, min(11vw, 18vh), 240px);
+    line-height: 0.92;
+    color: var(--ink);
+    letter-spacing: -0.015em;
+  }
+  .s-data .stat .lab2 {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: clamp(13px, 0.95vw, 15px);
+    color: var(--ink);
+    margin-top: 6px;
+  }
+  .s-data .stat .desc {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: clamp(15px, 1vw, 17px);
+    line-height: 1.5;
+    color: var(--ink);
+    max-width: 30ch;
+    margin-top: 6px;
+  }
+
+  /* The chart itself: a row of vertical "pixel stacks" — each track is
+     a column of small filled cells, with cell count proportional to the
+     value. Visually echoes the reference's pixel-glitch decoration. */
+  .s-data .chart {
+    display: flex; flex-direction: column; justify-content: end;
+    gap: clamp(10px, 1.2vh, 18px);
+  }
+  .s-data .chart .bars {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: clamp(10px, 1vw, 18px);
+    align-items: end;
+    height: 100%;
+    min-height: clamp(280px, 38vh, 540px);
+  }
+  .s-data .chart .stack {
+    display: flex; flex-direction: column-reverse; gap: 3px;
+    height: 100%;
+  }
+  .s-data .chart .stack .cell {
+    flex: 1 1 0;
+    min-height: 6px;
+    background: rgba(31, 43, 224, 0.10);
+  }
+  .s-data .chart .stack .cell.on { background: var(--ink); }
+  .s-data .chart .ticks {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: clamp(10px, 1vw, 18px);
+    border-top: 1.5px solid var(--ink);
+    padding-top: clamp(8px, 1vh, 14px);
+  }
+  .s-data .chart .ticks .ticklab {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(12px, 0.85vw, 14px);
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    text-align: center;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 6 — QUOTE
+     ────────────────────────────────────────────────────────────── */
+  .s-quote { background: var(--paper); }
+  .s-quote .pixel-glitch {
+    top: clamp(40px, 4vh, 80px);
+    right: clamp(36px, 3.6vw, 80px);
+    width: clamp(160px, 16vw, 280px);
+    bottom: clamp(40px, 4vh, 80px);
+    opacity: 0.6;
+  }
+  .s-quote .qframe {
+    position: absolute;
+    left: clamp(36px, 3.6vw, 80px);
+    right: clamp(220px, 22vw, 380px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+  }
+  .s-quote .qkicker {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: clamp(12px, 0.9vw, 14px);
+    color: var(--ink);
+    margin-bottom: clamp(16px, 1.8vh, 28px);
+  }
+  .s-quote .qbody {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(50px, min(5.6vw, 9vh), 110px);
+    line-height: 1.05;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    max-width: 92%;
+  }
+  .s-quote .qattr {
+    margin-top: clamp(24px, 2.6vh, 40px);
+    display: grid; grid-template-columns: auto 1fr;
+    gap: clamp(14px, 1.4vw, 24px);
+    align-items: end;
+    border-top: 1px solid var(--ink);
+    padding-top: clamp(10px, 1.2vh, 18px);
+  }
+  .s-quote .qattr .who-tag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: clamp(13px, 0.92vw, 15px);
+    color: var(--ink);
+  }
+  .s-quote .qattr .role-meta {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(12px, 0.85vw, 14px);
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    opacity: 0.78;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 7 — TREND TABLE (dense ledger)
+     ────────────────────────────────────────────────────────────── */
+  .s-table { background: var(--paper); }
+  .s-table .frame {
+    position: absolute;
+    inset: clamp(76px, 8vh, 130px) clamp(36px, 3.6vw, 80px) clamp(100px, 10vh, 150px);
+    display: flex; flex-direction: column;
+    z-index: 5;
+  }
+  .s-table .topbar {
+    display: flex; align-items: end; justify-content: space-between;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: clamp(12px, 1.4vh, 22px);
+    margin-bottom: clamp(14px, 1.6vh, 24px);
+    gap: 30px;
+  }
+  .s-table .topbar .h {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-size: clamp(46px, min(4.8vw, 8.2vh), 92px);
+    line-height: 0.95;
+    color: var(--ink);
+  }
+  .s-table .topbar .lab-tag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em;
+    font-size: clamp(12px, 0.9vw, 14px);
+    color: var(--ink); text-align: right;
+  }
+  .s-table .ledger {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    /* Distribute the rows so they fill the available height.
+       The header row stays at the top, body rows space evenly below. */
+    justify-content: stretch;
+  }
+  .s-table .row {
+    display: grid;
+    grid-template-columns: 76px 0.6fr 1.4fr 0.7fr 0.5fr;
+    gap: clamp(14px, 1.4vw, 28px);
+    align-items: center;
+    padding: 0;
+    flex: 1 1 0;
+    min-height: clamp(46px, 6vh, 80px);
+    border-bottom: 1px solid rgba(31, 43, 224, 0.18);
+  }
+  .s-table .row.headrow {
+    border-bottom: 1.5px solid var(--ink);
+    flex: 0 0 auto;
+    min-height: 0;
+    padding: 8px 0;
+  }
+  .s-table .row.headrow > div {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em;
+    font-size: clamp(11px, 0.75vw, 12px);
+    color: var(--ink);
+  }
+  .s-table .num-tag {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(13px, 0.95vw, 15px);
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+  .s-table .nm {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-size: clamp(20px, 1.6vw, 28px);
+    line-height: 1.15;
+    color: var(--ink);
+  }
+  .s-table .desc {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: clamp(14px, 0.95vw, 15px);
+    line-height: 1.4;
+    color: var(--ink);
+  }
+  .s-table .mood-tag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: clamp(13px, 0.92vw, 15px);
+    color: var(--ink);
+  }
+  .s-table .delta-tag {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    font-size: clamp(13px, 0.92vw, 15px);
+    text-align: right;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+  .s-table .delta-tag.up::before  { content: '↑ '; }
+  .s-table .delta-tag.down::before { content: '↓ '; opacity: 0.6; }
+  .s-table .delta-tag.flat::before { content: '— '; opacity: 0.6; }
+
+  /* ──────────────────────────────────────────────────────────────
+     SLIDE 8 — COLOPHON / CLOSING
+     ────────────────────────────────────────────────────────────── */
+  .s-colophon { background: var(--paper); }
+  .s-colophon .pixel-glitch {
+    top: clamp(80px, 9vh, 160px);
+    left: clamp(36px, 3.6vw, 80px);
+    width: clamp(220px, 26vw, 460px);
+    bottom: clamp(220px, 22vh, 360px);
+    opacity: 0.75;
+  }
+  .s-colophon .qr-block {
+    top: clamp(80px, 9vh, 160px);
+    right: clamp(36px, 3.6vw, 80px);
+    width: clamp(72px, 5vw, 100px);
+    height: clamp(72px, 5vw, 100px);
+  }
+  .s-colophon .titlewrap {
+    position: absolute;
+    right: clamp(36px, 3.6vw, 80px);
+    top: 28%;
+    z-index: 5;
+    max-width: 56%;
+    text-align: right;
+  }
+  .s-colophon .ktag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-size: clamp(12px, 0.9vw, 14px);
+    color: var(--ink);
+    margin-bottom: clamp(14px, 1.6vh, 24px);
+  }
+  .s-colophon .ttl {
+    font-family: 'Newsreader', Georgia, serif;
+    
+    font-weight: 400;
+    font-size: clamp(72px, min(8.4vw, 14vh), 180px);
+    line-height: 0.96;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .s-colophon .col-footer {
+    position: absolute;
+    left: clamp(36px, 3.6vw, 80px);
+    right: clamp(36px, 3.6vw, 80px);
+    bottom: clamp(106px, 10.4vh, 160px);
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1.2fr;
+    gap: clamp(20px, 2.4vw, 44px);
+    z-index: 5;
+  }
+  .s-colophon .col-footer > div {
+    border-top: 1.5px solid var(--ink);
+    padding-top: clamp(10px, 1.2vh, 16px);
+  }
+  .s-colophon .col-footer .ftag {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: clamp(11px, 0.78vw, 13px);
+    margin-bottom: 6px;
+    color: var(--ink);
+  }
+  .s-colophon .col-footer .ftxt {
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: clamp(14px, 0.95vw, 15px);
+    line-height: 1.5;
+    color: var(--ink);
+  }
+
+/* ===========================================
+   VIEWPORT FITTING: MANDATORY BASE STYLES
+   Include this ENTIRE file in every presentation.
+   These styles ensure slides fit exactly in the viewport.
+   =========================================== */
+
+/* 1. Lock html/body to viewport */
+html, body {
+    height: 100%;
+    overflow-x: hidden;
+}
+
+html {
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+}
+
+/* 2. Each slide = exact viewport height */
+.slide {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+    overflow: hidden; /* CRITICAL: Prevent ANY overflow */
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+/* 3. Content container with flex for centering */
+.slide-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-height: 100%;
+    overflow: hidden; /* Double-protection against overflow */
+    padding: var(--slide-padding);
+}
+
+/* 4. ALL typography uses clamp() for responsive scaling */
+:root {
+    /* Titles scale from mobile to desktop */
+    --title-size: clamp(1.5rem, 5vw, 4rem);
+    --h2-size: clamp(1.25rem, 3.5vw, 2.5rem);
+    --h3-size: clamp(1rem, 2.5vw, 1.75rem);
+
+    /* Body text */
+    --body-size: clamp(0.75rem, 1.5vw, 1.125rem);
+    --small-size: clamp(0.65rem, 1vw, 0.875rem);
+
+    /* Spacing scales with viewport */
+    --slide-padding: clamp(1rem, 4vw, 4rem);
+    --content-gap: clamp(0.5rem, 2vw, 2rem);
+    --element-gap: clamp(0.25rem, 1vw, 1rem);
+}
+
+/* 5. Cards/containers use viewport-relative max sizes */
+.card, .container, .content-box {
+    max-width: min(90vw, 1000px);
+    max-height: min(80vh, 700px);
+}
+
+/* 6. Lists auto-scale with viewport */
+.feature-list, .bullet-list {
+    gap: clamp(0.4rem, 1vh, 1rem);
+}
+
+.feature-list li, .bullet-list li {
+    font-size: var(--body-size);
+    line-height: 1.4;
+}
+
+/* 7. Grids adapt to available space */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+    gap: clamp(0.5rem, 1.5vw, 1rem);
+}
+
+/* 8. Images constrained to viewport */
+img, .image-container {
+    max-width: 100%;
+    max-height: min(50vh, 400px);
+    object-fit: contain;
+}
+
+/* ===========================================
+   RESPONSIVE BREAKPOINTS
+   Aggressive scaling for smaller viewports
+   =========================================== */
+
+/* Short viewports (< 700px height) */
+@media (max-height: 700px) {
+    :root {
+        --slide-padding: clamp(0.75rem, 3vw, 2rem);
+        --content-gap: clamp(0.4rem, 1.5vw, 1rem);
+        --title-size: clamp(1.25rem, 4.5vw, 2.5rem);
+        --h2-size: clamp(1rem, 3vw, 1.75rem);
+    }
+}
+
+/* Very short viewports (< 600px height) */
+@media (max-height: 600px) {
+    :root {
+        --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem);
+        --content-gap: clamp(0.3rem, 1vw, 0.75rem);
+        --title-size: clamp(1.1rem, 4vw, 2rem);
+        --body-size: clamp(0.7rem, 1.2vw, 0.95rem);
+    }
+
+    /* Hide non-essential elements */
+    .nav-dots, .keyboard-hint, .decorative {
+        display: none;
+    }
+}
+
+/* Extremely short (landscape phones, < 500px height) */
+@media (max-height: 500px) {
+    :root {
+        --slide-padding: clamp(0.4rem, 2vw, 1rem);
+        --title-size: clamp(1rem, 3.5vw, 1.5rem);
+        --h2-size: clamp(0.9rem, 2.5vw, 1.25rem);
+        --body-size: clamp(0.65rem, 1vw, 0.85rem);
+    }
+}
+
+/* Narrow viewports (< 600px width) */
+@media (max-width: 600px) {
+    :root {
+        --title-size: clamp(1.25rem, 7vw, 2.5rem);
+    }
+
+    /* Stack grids vertically */
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ===========================================
+   REDUCED MOTION
+   Respect user preferences
+   =========================================== */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.2s !important;
+    }
+
+    html {
+        scroll-behavior: auto;
+    }
+}
+
+
+/* Cobalt Grid adaptation: user-requested light Hei type and expanded whitespace.
+   CLReq 3.1 Fonts & typeface styles; 6.1.1 line-start/end prohibition.
+   KLReq 5.2 word segmentation; 7.1.4 Word Break Restrictions.
+   Browser implementation choices: locale font faces, strict line breaking,
+   Korean keep-all and original word spaces. No synthetic CJK italic. */
+:root{--paper:#F0EBDE;--ink:#1F2BE0;--ink-soft:#5560E5;--grid:rgba(31,43,224,.045);--quiet:rgba(31,43,224,.67);--line:rgba(31,43,224,.22);--edge:8%;--zh:'Noto Sans SC','Microsoft YaHei',sans-serif;--ko:'Noto Sans KR','Malgun Gothic',sans-serif}
+html,body{padding:0;margin:0;overflow:hidden;scroll-snap-type:none;background:var(--paper);font-synthesis:none}
+body{font-family:'Hanken Grotesk',var(--zh);font-weight:400;line-break:strict;word-break:normal;overflow-wrap:normal}
+.stage{background:var(--paper)}
+.stage::before{background-size:clamp(28px,4vw,80px) clamp(28px,4vw,80px);opacity:.62;z-index:1}
+.slide{position:absolute;inset:0;width:100vw;height:100vh;height:100dvh;display:block;background:transparent;overflow:hidden;z-index:2}
+.slide:not(.active){visibility:hidden}.slide.active{visibility:visible}
+p,h1,h2,h3{margin:0;padding:0;font-weight:300}h1,h2,h3{font-family:var(--zh);font-style:normal}p{line-height:1.8;letter-spacing:0}
+.running,.running-foot{position:absolute;left:var(--edge);right:var(--edge);display:flex;justify-content:space-between;align-items:center;font-size:clamp(11px,1vw,19px);font-weight:400;color:var(--quiet);line-height:1.4}
+.running{top:6.8%;padding-bottom:clamp(10px,1.3vh,18px);border-bottom:1px solid var(--line)}
+.running-foot{bottom:6%;font-size:clamp(10px,.85vw,16px)}
+.folio{font-family:'DM Mono',monospace;color:var(--ink);font-size:clamp(10px,.85vw,16px)}.slash{padding:0 clamp(7px,.8vw,16px);opacity:.45}
+.s-cover .cover-copy{position:absolute;left:var(--edge);top:36%;width:75%}
+.cover-copy h1{font-size:clamp(38px,5.4vw,104px);font-weight:300;line-height:1.3;letter-spacing:.055em;white-space:nowrap}
+.cover-copy .english{font-family:'Newsreader',Georgia,serif;font-size:clamp(18px,2.15vw,42px);font-weight:400;letter-spacing:0;margin-top:clamp(18px,3vh,36px)}
+.cover-kicker{position:absolute;left:var(--edge);bottom:20%;font-size:clamp(12px,1.25vw,24px);color:var(--quiet);font-weight:300}
+.pixel-note{position:absolute;right:var(--edge);top:36%;width:clamp(35px,4vw,78px);height:clamp(35px,4vw,78px);opacity:.68;background:linear-gradient(var(--ink),var(--ink)) 0 0 / 33.333% 33.333% no-repeat,linear-gradient(var(--ink),var(--ink)) 50% 50% / 33.333% 33.333% no-repeat,linear-gradient(var(--ink),var(--ink)) 100% 100% / 33.333% 33.333% no-repeat}
+.page-heading{position:absolute;left:var(--edge);top:19%;font-size:clamp(21px,2.35vw,46px);font-weight:400;line-height:1.5;letter-spacing:.025em;max-width:82%}
+.example-layout{position:absolute;left:var(--edge);right:var(--edge);top:40%;display:grid;grid-template-columns:46% 54%;align-items:start}
+.source-phrase{padding-top:clamp(2px,1vh,12px)}
+.source-phrase .language-label{font-size:clamp(11px,.95vw,18px);color:var(--quiet);margin-bottom:clamp(18px,3.2vh,36px)}
+.korean{font-family:var(--ko);font-size:clamp(23px,3vw,58px);font-weight:300;line-height:1.5;word-break:keep-all;letter-spacing:0;white-space:nowrap}
+.situations{border-left:1px solid var(--line);padding-left:clamp(26px,4.5vw,88px);display:flex;flex-direction:column;gap:clamp(28px,6vh,68px)}
+.context-label{font-size:clamp(12px,1.05vw,21px);line-height:1.6;color:var(--quiet);font-weight:400;margin-bottom:clamp(10px,1.7vh,20px)}
+.translation{font-size:clamp(17px,1.9vw,38px);font-weight:400;line-height:1.7;white-space:nowrap}
+.takeaway{position:absolute;left:var(--edge);bottom:18%;font-size:clamp(14px,1.35vw,27px);font-weight:400;line-height:1.8}
+.author{position:absolute;left:var(--edge);top:31%;font-size:clamp(12px,1.2vw,24px);color:var(--quiet)}
+.author strong{font-weight:400;color:var(--ink);margin-right:clamp(15px,1.8vw,34px)}
+.definition{position:absolute;left:var(--edge);top:43%;font-size:clamp(22px,2.45vw,48px);font-weight:300;line-height:1.85;max-width:80%;letter-spacing:.015em}
+.definition span{display:block}
+.portrait{position:absolute;right:12%;top:24%;width:clamp(140px,15vw,288px);margin:0}
+.portrait img{display:block;width:100%;height:auto;max-height:none;object-fit:contain}
+.portrait figcaption{margin-top:clamp(8px,1vh,12px);font-size:clamp(9px,.72vw,14px);line-height:1.7;color:var(--quiet);text-align:left}
+.portrait a{color:inherit;text-decoration:none}.portrait a:hover{text-decoration:underline}
+.terms{position:absolute;left:var(--edge);right:var(--edge);bottom:19%;display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(25px,6vw,120px)}
+.term{border-top:1px solid var(--line);padding-top:clamp(12px,2.3vh,26px);font-size:clamp(15px,1.5vw,30px);font-weight:400}
+.term small{display:block;margin-top:clamp(8px,1.3vh,16px);font-size:clamp(10px,.95vw,18px);color:var(--quiet);font-weight:300;line-height:1.7}
+.controls{position:fixed;bottom:clamp(5px,1vh,12px);left:50%;transform:translateX(-50%);z-index:20;display:flex;gap:clamp(8px,.8vw,16px);opacity:0;transition:opacity .2s}
+body:hover .controls,.controls:focus-within{opacity:1}.controls button{background:var(--paper);color:var(--ink);border:1px solid var(--line);font:inherit;font-size:clamp(11px,.8vw,16px);padding:clamp(5px,.5vw,10px) clamp(10px,1vw,20px);cursor:pointer}.controls button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}.export .controls{display:none}
+@media(max-height:700px){.running{top:6%}.running-foot{bottom:5%}}
+@media(max-height:600px){.running{font-size:clamp(9px,1vw,15px)}.running-foot{font-size:clamp(9px,.85vw,13px)}}
+@media(max-height:500px){.page-heading{top:17%;font-size:clamp(18px,2.45vw,32px)}.example-layout{top:36%}.takeaway{bottom:15%}.author{top:29%}.definition{top:40%;font-size:clamp(18px,2.3vw,31px)}.terms{bottom:17%}.term small{display:none}.situations{gap:clamp(14px,4vh,28px)}}
+@media(max-width:650px) and (orientation:portrait){:root{--edge:7%}.cover-copy h1{font-size:clamp(28px,7.7vw,48px)}.cover-copy .english{font-size:clamp(18px,5vw,28px)}.pixel-note{top:27%;width:clamp(24px,6vw,38px);height:clamp(24px,6vw,38px)}.page-heading{font-size:clamp(22px,5.5vw,32px);max-width:85%;top:17%}.example-layout{top:34%;display:block}.korean{font-size:clamp(25px,7vw,40px)}.source-phrase .language-label{margin-bottom:clamp(6px,1vh,12px)}.situations{margin-top:clamp(25px,5vh,45px);padding-left:0;border-left:none;gap:clamp(20px,4vh,40px)}.translation{font-size:clamp(18px,4.8vw,28px)}.context-label{font-size:clamp(12px,3vw,16px);margin-bottom:clamp(5px,1vh,12px)}.takeaway{bottom:13%;font-size:clamp(13px,3.5vw,20px)}.author{top:29%;font-size:clamp(12px,3vw,18px)}.definition{top:40%;font-size:clamp(21px,5.2vw,30px);line-height:1.8}.definition span{display:inline}.terms{bottom:20%;gap:clamp(10px,3vw,22px)}.term{font-size:clamp(16px,4vw,22px)}.term small{display:none}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media(max-width:650px) and (orientation:portrait){.portrait{right:var(--edge);top:26%;width:clamp(72px,21vw,130px)}.portrait figcaption{font-size:clamp(8px,2vw,11px);margin-top:clamp(3px,.5vh,6px)}.s-theory .definition{top:47%;font-size:clamp(19px,4.8vw,29px)}}
+
+/* Shared additions for slides 4–18. Keep the established cobalt grid and
+   Chinese Hei family; information hierarchy comes from spacing and scale. */
+.running-foot a,.page-body a{color:inherit;text-decoration:none;text-underline-offset:.2em}
+.running-foot a:hover,.page-body a:hover{text-decoration:underline}
+.composed .page-body{position:absolute;left:var(--edge);right:var(--edge);top:34%;bottom:18%;max-height:66vh}
+.page-body h3{font-weight:400;line-height:1.6;font-size:clamp(18px,1.9vw,37px)}
+.page-body p{font-size:clamp(14px,1.45vw,29px);line-height:1.8;font-weight:300}
+.page-body .eyebrow,.page-body .scene{font-size:clamp(12px,1.05vw,21px);color:var(--quiet);line-height:1.7}
+.page-body .closing-line{position:absolute;left:0;bottom:0;font-size:clamp(14px,1.35vw,27px);font-weight:400;line-height:1.8;max-width:100%}
+.page-body .lead-line{font-size:clamp(19px,1.95vw,38px);font-weight:300;line-height:1.7}
+.parallel{display:grid;grid-template-columns:1fr 1fr;gap:clamp(45px,9vw,180px);padding-top:clamp(8px,2vh,24px)}
+.parallel>div+div{padding-left:clamp(30px,5vw,96px);border-left:1px solid var(--line)}
+.page-body .large-word{font-size:clamp(25px,3vw,58px);font-weight:300;line-height:1.5;margin:clamp(16px,3.5vh,38px) 0 clamp(16px,3vh,34px)}
+.page-body .support{font-size:clamp(16px,1.7vw,34px);line-height:1.9}
+.open-grid{display:grid;gap:clamp(24px,4vh,48px) clamp(40px,9vw,180px)}
+.open-grid.four{grid-template-columns:1fr 1fr;width:90%}
+.open-cell{border-top:1px solid var(--line);padding-top:clamp(12px,2vh,24px)}
+.open-cell h3{margin-bottom:clamp(10px,1.5vh,18px)}
+.open-cell p{color:var(--quiet);font-size:clamp(14px,1.3vw,26px)}
+.environment .page-body{top:33%;bottom:15%}.environment .open-grid{row-gap:clamp(22px,3vh,38px)}
+.role-layout{display:grid;grid-template-columns:40% 60%;margin-top:clamp(24px,4vh,44px);align-items:center}
+.role-center{display:flex;flex-direction:column;gap:clamp(8px,1.6vh,20px)}
+.role-name{font-size:clamp(32px,4.2vw,82px);font-weight:300}.role-center small{font-size:clamp(12px,1.05vw,21px);color:var(--quiet)}
+.role-list{border-left:1px solid var(--line);padding-left:clamp(25px,5vw,100px);display:grid;gap:clamp(15px,2vh,25px)}
+.role-list>div{display:grid;grid-template-columns:27fr 73fr;align-items:baseline;gap:clamp(12px,1.4vw,26px)}
+.role-list h3{font-size:clamp(15px,1.4vw,28px)}.role-list p{font-size:clamp(13px,1.2vw,24px);color:var(--quiet)}
+.question-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(30px,6vw,120px);margin-top:clamp(25px,5vh,58px)}
+.question-grid>div{padding-top:clamp(12px,2vh,24px);border-top:1px solid var(--line)}
+.question-grid span{font-size:clamp(18px,1.75vw,35px);font-weight:400}
+.question-grid p{margin-top:clamp(12px,2vh,24px);color:var(--quiet)}
+.example-strip{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:clamp(20px,4vw,78px);padding-top:clamp(12px,2vh,22px);border-top:1px solid var(--line)}
+.page-body :lang(ko){font-family:var(--ko);font-style:normal;word-break:keep-all;letter-spacing:0}
+.page-body .ko-inline{font-size:clamp(16px,1.65vw,32px);white-space:nowrap}.example-strip p:last-child{font-size:clamp(12px,1.2vw,24px);color:var(--quiet)}
+.choice-pair{display:grid;grid-template-columns:1fr 1fr;gap:clamp(30px,8vw,160px);margin-top:clamp(30px,5vh,60px)}
+.choice-pair .choice-tx{font-size:clamp(18px,1.95vw,38px);margin-top:clamp(10px,2vh,25px)}
+.cycle{display:flex;align-items:center;justify-content:space-between;margin-top:clamp(25px,5vh,56px);border-top:1px solid var(--line);padding-top:clamp(18px,3vh,38px);font-size:clamp(14px,1.45vw,29px)}
+.cycle i{font-style:normal;opacity:.5}
+.dimension-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(30px,6vw,120px);padding-top:clamp(28px,5vh,64px)}
+.dimension-grid>div{border-top:1px solid var(--line);padding-top:clamp(18px,3vh,36px)}
+.dimension-grid h3{font-size:clamp(25px,2.9vw,56px);font-weight:300}
+.dimension-grid p{font-size:clamp(18px,1.8vw,36px);color:var(--quiet);margin-top:clamp(18px,3vh,36px);line-height:1.9}
+.sentence-pair{display:grid;grid-template-columns:1.15fr 1fr;gap:clamp(24px,5vw,100px);margin-top:clamp(24px,4vh,48px)}
+.page-body .ko-example{font-size:clamp(24px,2.65vw,52px);font-weight:300;line-height:1.6;margin-top:clamp(10px,2vh,22px);white-space:nowrap}
+.page-body .zh-example{font-size:clamp(23px,2.4vw,47px);font-weight:300;line-height:1.7;margin-top:clamp(10px,2vh,22px)}
+.language-notes{display:grid;grid-template-columns:1.3fr .8fr 1.3fr;gap:clamp(20px,4vw,80px);margin-top:clamp(25px,5vh,58px)}
+.language-notes>div{border-top:1px solid var(--line);padding-top:clamp(12px,2vh,22px)}
+.language-notes p+p{font-size:clamp(12px,1.1vw,22px);color:var(--quiet);margin-top:clamp(8px,1vh,14px)}
+.culture-layout{display:grid;grid-template-columns:42% 58%;align-items:center;min-height:29vh}
+.culture-term .ko-feature{font-size:clamp(46px,5vw,98px);font-weight:300;line-height:1.3}.culture-term p+p{font-size:clamp(12px,1.05vw,21px);margin-top:clamp(15px,3vh,32px);color:var(--quiet)}
+.culture-options{border-left:1px solid var(--line);padding-left:clamp(25px,4.5vw,90px);display:grid;gap:clamp(22px,4vh,44px)}
+.culture-options h3{font-size:clamp(24px,2.5vw,50px);font-weight:300;margin-top:clamp(6px,1vh,14px)}
+.parenthetical{font-size:clamp(15px,1.6vw,32px)}
+.page-body .discussion-line{margin-top:clamp(20px,3vh,35px);font-size:clamp(14px,1.3vw,26px);font-weight:400}
+.communicative-example{margin-top:clamp(20px,3vh,35px)}
+.communicative-example .ko-example{font-size:clamp(28px,3.3vw,65px)}
+.page-body .translation-arrow{font-size:clamp(20px,2vw,40px);color:var(--quiet);line-height:1.3;margin:clamp(10px,2vh,22px) 0}
+.intent-note{position:absolute;right:2%;top:30%;padding-left:clamp(20px,4vw,80px);border-left:1px solid var(--line)}
+.intent-note span{font-size:clamp(12px,1.05vw,21px);color:var(--quiet)}.intent-note p{font-size:clamp(21px,2.2vw,43px);margin-top:clamp(10px,2vh,22px)}
+.page-body .quiz-source{font-size:clamp(26px,3.1vw,61px);line-height:1.5;margin-top:clamp(20px,3.5vh,40px)}
+.answer-options{display:grid;grid-template-columns:1fr 1fr;gap:clamp(30px,6vw,118px);margin-top:clamp(28px,5vh,58px)}
+.answer-options>div{border-top:1px solid var(--line);padding-top:clamp(16px,2.5vh,30px);display:flex;align-items:baseline;gap:clamp(14px,2vw,40px)}
+.option-letter{font-family:'Hanken Grotesk',sans-serif;font-size:clamp(17px,1.8vw,35px);color:var(--quiet)}
+.answer-options p{font-size:clamp(17px,1.85vw,36px)}
+.analysis-layout{display:grid;grid-template-columns:57fr 43fr;gap:clamp(20px,3vw,60px)}
+.analysis-rows{display:grid;gap:clamp(20px,3.5vh,40px)}
+.analysis-rows>div{display:grid;grid-template-columns:14fr 86fr;gap:clamp(10px,1.5vw,29px);align-items:baseline}
+.analysis-rows span{font-size:clamp(15px,1.4vw,28px);font-weight:400}.analysis-rows p{font-size:clamp(13px,1.3vw,26px);color:var(--quiet)}
+.analysis-result{border-left:1px solid var(--line);padding-left:clamp(24px,4vw,80px);align-self:center}
+.analysis-result p+p{font-size:clamp(24px,2.7vw,53px);margin-top:clamp(18px,3vh,32px);line-height:1.8}
+.switch-scene{position:absolute;bottom:0;left:0;right:0;display:flex;gap:clamp(20px,4vw,78px);align-items:baseline;border-top:1px solid var(--line);padding-top:clamp(14px,2.5vh,28px)}
+.switch-scene span{font-size:clamp(13px,1.15vw,23px);color:var(--quiet)}.switch-scene p{font-size:clamp(15px,1.4vw,28px)}
+.evaluation .page-body{top:34%;bottom:15%}.evaluation-grid{row-gap:clamp(24px,4vh,48px)}
+.evaluation-note{position:absolute;bottom:0;left:0;right:0;display:flex;gap:clamp(22px,5vw,96px);align-items:baseline}
+.evaluation-note span{font-size:clamp(15px,1.4vw,28px);font-weight:400}.evaluation-note p{font-size:clamp(13px,1.25vw,25px);color:var(--quiet)}
+.cautions{display:grid;gap:clamp(20px,4vh,48px)}
+.cautions>div{display:grid;grid-template-columns:44fr 56fr;gap:clamp(20px,3vw,60px);align-items:baseline}
+.cautions h3{font-size:clamp(18px,1.7vw,34px);font-weight:400}.cautions p{font-size:clamp(14px,1.35vw,27px);color:var(--quiet)}
+.recap-list{display:grid;gap:clamp(20px,3.5vh,42px);width:100%}
+.recap-list>div{display:grid;grid-template-columns:38% 62%;align-items:baseline}
+.recap-list h3{font-size:clamp(20px,2.2vw,43px);font-weight:300}.recap-list p{font-size:clamp(14px,1.4vw,28px);color:var(--quiet)}
+.recap .page-body{bottom:15%}.page-body .recap-end{position:absolute;bottom:0;left:0;font-size:clamp(21px,2.25vw,44px);font-weight:300;line-height:1.75}.recap-end br{display:none}
+.references .page-body{top:32%;bottom:16%}
+.bibliography{display:grid;gap:clamp(18px,3vh,36px)}
+.bibliography>div{display:grid;grid-template-columns:24% 76%;align-items:baseline}
+.bibliography p{font-size:clamp(13px,1.3vw,26px);line-height:1.7}
+.bibliography .reference-author{font-weight:400}.bibliography :lang(en){font-family:'Hanken Grotesk',var(--zh);letter-spacing:0}
+.page-body .reference-note{position:absolute;bottom:0;left:0;font-size:clamp(11px,.95vw,19px);line-height:1.9;color:var(--quiet)}
+/* Diagram-like arrangements reflow into a concise reading order on portrait. */
+@media(max-width:700px) and (orientation:portrait){
+ .composed .page-heading{top:16%;font-size:clamp(21px,5.2vw,34px);max-width:85%}
+ .composed .page-body{top:29%;bottom:14%;max-height:64vh}
+ .page-body p{font-size:clamp(13px,3.5vw,20px)}.page-body h3{font-size:clamp(17px,4.5vw,28px)}
+ .page-body .eyebrow,.page-body .scene{font-size:clamp(11px,2.9vw,17px)}
+ .page-body .lead-line{font-size:clamp(18px,4.7vw,29px)}
+ .page-body .closing-line{font-size:clamp(12px,3.2vw,20px);bottom:0;line-height:1.8}
+ .parallel{gap:clamp(14px,4vw,28px);padding-top:clamp(15px,3vh,28px)}.parallel>div+div{padding-left:clamp(12px,3vw,25px)}
+ .page-body .large-word{font-size:clamp(21px,5.5vw,34px);margin:clamp(18px,3vh,30px) 0}.page-body .support{font-size:clamp(13px,3.4vw,21px)}
+ .open-grid.four{width:100%;gap:clamp(26px,5vh,48px) clamp(18px,5vw,40px)}.open-cell p{font-size:clamp(12px,3vw,19px)}
+ .role-layout{grid-template-columns:1fr;margin-top:clamp(20px,4vh,35px)}.role-name{font-size:clamp(28px,8vw,50px)}.role-center small{font-size:clamp(11px,3vw,18px)}
+ .role-list{margin-top:clamp(20px,4vh,36px);padding-left:0;border-left:0;gap:clamp(18px,3vh,32px)}.role-list>div{grid-template-columns:25fr 75fr;gap:clamp(10px,2vw,18px)}.role-list h3{font-size:clamp(13px,3.5vw,22px)}.role-list p{font-size:clamp(12px,3vw,19px)}
+ .question-grid{gap:clamp(13px,3vw,26px);margin-top:clamp(25px,5vh,48px)}.question-grid span{font-size:clamp(17px,4.5vw,28px)}.question-grid p{font-size:clamp(12px,3.2vw,20px)}
+ .example-strip{display:block}.page-body .ko-inline{font-size:clamp(16px,4.2vw,25px)}.example-strip p:last-child{font-size:clamp(12px,3.1vw,19px);margin-top:clamp(8px,1vh,14px)}
+ .choice-pair{grid-template-columns:1fr;gap:clamp(24px,4vh,40px);margin-top:clamp(22px,4vh,42px)}.choice-pair .choice-tx{font-size:clamp(17px,4.4vw,27px);margin-top:clamp(5px,1vh,12px)}
+ .cycle{font-size:clamp(10px,2.7vw,17px);gap:clamp(4px,1vw,8px);margin-top:clamp(24px,5vh,46px);padding-top:clamp(17px,3vh,30px)}
+ .dimension-grid{grid-template-columns:1fr;gap:clamp(25px,5vh,44px);padding-top:0}.dimension-grid>div{display:grid;grid-template-columns:34% 66%;align-items:baseline;padding-top:clamp(12px,2vh,22px)}.dimension-grid h3{font-size:clamp(22px,5.8vw,36px)}.dimension-grid p{font-size:clamp(15px,4vw,24px);margin-top:0;line-height:1.8}.dimension-grid br{display:none}
+ .sentence-pair{grid-template-columns:1fr;gap:clamp(18px,3vh,35px);margin-top:clamp(20px,3.5vh,40px)}.page-body .ko-example{font-size:clamp(21px,5.5vw,35px);white-space:normal}.page-body .zh-example{font-size:clamp(22px,5.5vw,35px)}
+ .language-notes{gap:clamp(12px,3vw,24px);margin-top:clamp(22px,4vh,40px);grid-template-columns:1.2fr .6fr 1fr}.language-notes .ko-inline{font-size:clamp(12px,3.3vw,20px)}.language-notes p+p{font-size:clamp(11px,2.8vw,18px)}
+ .culture-layout{grid-template-columns:1fr;min-height:0}.culture-term .ko-feature{font-size:clamp(42px,11vw,64px)}.culture-term p+p{font-size:clamp(11px,3vw,18px);margin-top:clamp(6px,1vh,14px)}.culture-options{border-left:0;padding-left:0;margin-top:clamp(20px,3vh,35px);gap:clamp(18px,3vh,32px)}.culture-options h3{font-size:clamp(22px,5.8vw,36px)}.parenthetical{font-size:clamp(14px,3.7vw,23px)}.page-body .discussion-line{font-size:clamp(12px,3.2vw,20px);margin-top:clamp(20px,3vh,35px)}
+ .communicative-example{margin-top:clamp(35px,6vh,60px)}.communicative-example .ko-example{font-size:clamp(23px,6vw,37px)}.intent-note{position:static;margin-top:clamp(25px,5vh,48px);padding-left:clamp(15px,4vw,30px)}.intent-note span{font-size:clamp(11px,3vw,18px)}.intent-note p{font-size:clamp(19px,5vw,30px);margin-top:clamp(5px,1vh,12px)}
+ .page-body .quiz-source{font-size:clamp(25px,6.5vw,40px);margin-top:clamp(25px,4vh,45px)}.answer-options{grid-template-columns:1fr;gap:clamp(28px,5vh,48px);margin-top:clamp(28px,5vh,48px)}.answer-options p{font-size:clamp(17px,4.4vw,27px)}.option-letter{font-size:clamp(16px,4vw,25px)}
+ .analysis-layout{grid-template-columns:1fr;gap:clamp(28px,4vh,42px)}.analysis-rows{gap:clamp(18px,3vh,31px)}.analysis-rows>div{grid-template-columns:13fr 87fr;gap:clamp(8px,2vw,15px)}.analysis-rows span{font-size:clamp(13px,3.4vw,21px)}.analysis-rows p{font-size:clamp(12px,3.2vw,20px)}.analysis-result{padding-left:clamp(15px,4vw,30px)}.analysis-result p+p{font-size:clamp(20px,5.3vw,33px);margin-top:clamp(10px,1.5vh,18px)}.analysis-result br{display:none}.switch-scene{display:block}.switch-scene span{font-size:clamp(11px,2.8vw,18px)}.switch-scene p{font-size:clamp(12px,3.2vw,20px);margin-top:clamp(4px,.8vh,10px)}
+ .evaluation-note{display:block}.evaluation-note span{font-size:clamp(15px,4vw,25px)}.evaluation-note p{font-size:clamp(12px,3.2vw,20px);margin-top:clamp(10px,1.5vh,18px)}
+ .cautions{gap:clamp(27px,5vh,50px)}.cautions>div{grid-template-columns:1fr;gap:clamp(9px,1.5vh,18px)}.cautions h3{font-size:clamp(17px,4.5vw,28px)}.cautions p{font-size:clamp(12px,3.2vw,20px)}
+ .recap-list{gap:clamp(23px,4vh,44px)}.recap-list>div{grid-template-columns:1fr;gap:clamp(7px,1vh,14px)}.recap-list h3{font-size:clamp(21px,5.5vw,34px)}.recap-list p{font-size:clamp(12px,3.2vw,20px)}.page-body .recap-end{font-size:clamp(22px,5.6vw,35px)}.recap-end br{display:block}
+ .bibliography{gap:clamp(22px,4vh,42px)}.bibliography>div{grid-template-columns:1fr;gap:clamp(5px,.8vh,12px)}.bibliography p{font-size:clamp(12px,3.1vw,20px)}.page-body .reference-note{font-size:clamp(10px,2.6vw,16px)}
+}
+/* Navigation index is intentionally separate from slide content. */
+.contents-dialog{border:1px solid var(--line);background:var(--paper);color:var(--ink);width:min(86vw,900px);max-height:85vh;padding:clamp(20px,3vw,50px);font-family:var(--zh)}
+.contents-dialog::backdrop{background:rgba(20,25,60,.2)}.contents-dialog h2{font-size:clamp(20px,2vw,32px);font-weight:400;margin-bottom:clamp(20px,3vh,32px)}
+.contents-list{display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,.6vw,12px)}.contents-list button{display:flex;gap:clamp(10px,1vw,20px);text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;font-size:clamp(12px,1vw,17px);line-height:1.7;padding:clamp(8px,1vw,16px);cursor:pointer}.contents-list button:hover{background:rgba(31,43,224,.05)}.contents-list span{font-family:'DM Mono',monospace;color:var(--quiet)}
+.contents-close{position:absolute;right:clamp(12px,2vw,32px);top:clamp(10px,1.5vw,24px);border:0;background:none;color:inherit;font-size:clamp(20px,2vw,30px);cursor:pointer}
+@media(max-width:600px){.contents-list{grid-template-columns:1fr}.contents-dialog{max-height:90vh}}
+@media(prefers-reduced-motion:reduce){.slide{transition:none}}
+
+.communicative-example{width:72%}
+@media(max-width:700px) and (orientation:portrait){.communicative-example{width:100%}}
+@media(max-width:650px) and (orientation:portrait){.portrait{top:24%}.s-theory .definition{top:49%}}
+.revision-example .page-body{top:32%;bottom:17%}
+.page-body .revision-source{font-size:clamp(26px,2.7vw,52px);line-height:1.5;margin-top:2vh}
+.revision-pair{display:grid;grid-template-columns:1fr 1fr;gap:7vw;margin-top:3.8vh}
+.revision-pair>div{border-top:1px solid var(--line);padding-top:1.8vh}
+.revision-pair h3{font-size:clamp(22px,2.3vw,44px);font-weight:300;margin-top:1vh;line-height:1.6}
+.revision-pair .explain{font-size:clamp(13px,1.15vw,22px);color:var(--quiet);margin-top:1.2vh;line-height:1.8}
+.page-body .conclusion-thesis{font-size:clamp(28px,3vw,58px);line-height:1.7}
+.conclusion-detail{display:grid;grid-template-columns:1fr 1fr;gap:7vw;margin-top:5vh}
+.conclusion-detail>div{border-top:1px solid var(--line);padding-top:2vh}
+.conclusion-detail h3{font-size:clamp(17px,1.5vw,29px)}
+.conclusion-detail p{font-size:clamp(14px,1.3vw,25px);color:var(--quiet);margin-top:1.5vh}
+@media(max-width:700px) and (orientation:portrait){
+.revision-example .page-body{top:28%;bottom:13%}
+.page-body .revision-source{font-size:clamp(22px,5.2vw,34px);margin-top:1.5vh}
+.revision-pair{grid-template-columns:1fr;gap:2.3vh;margin-top:2.5vh}
+.revision-pair h3{font-size:clamp(20px,4.6vw,29px);margin-top:.6vh}.revision-pair h3 br{display:none}
+.revision-pair .explain{font-size:clamp(12px,2.8vw,18px);margin-top:.7vh}.revision-pair .explain br{display:none}
+.page-body .conclusion-thesis{font-size:clamp(26px,6vw,38px)}
+.conclusion-detail{grid-template-columns:1fr;gap:3vh;margin-top:4vh}.conclusion-detail h3{font-size:clamp(17px,4vw,25px)}.conclusion-detail p{font-size:clamp(13px,3.2vw,20px)}
+}
+
+/* Landscape lecture photo, replacing the small portrait. */
+.s-theory .portrait{right:var(--edge);top:30%;width:38%;max-width:none}
+.s-theory .portrait img{width:100%;height:auto}
+.s-theory .definition{top:43%;max-width:43%;font-size:clamp(20px,2.15vw,42px)}
+.s-theory .definition span{display:inline}
+@media(max-aspect-ratio:6/5){
+.s-theory .author{top:27%}
+.s-theory .definition{top:34%;max-width:39%;font-size:clamp(18px,2.7vw,29px)}
+.s-theory .portrait{top:32%;width:42%}
+.s-theory .terms{bottom:20%}
+}
+@media(max-width:650px) and (orientation:portrait){
+.s-theory .author{top:25%}
+.s-theory .portrait{top:32%;left:var(--edge);right:auto;width:65%;max-width:310px}
+.s-theory .definition{top:61%;max-width:86%;font-size:clamp(18px,4.5vw,26px);line-height:1.7}
+.s-theory .terms{bottom:14%}
+}
+
+.s-theory .terms{bottom:12%}.s-theory .definition span{display:block}
+@media(max-aspect-ratio:6/5){.s-theory .terms{bottom:20%}.s-theory .definition span{display:inline}}
+@media(max-width:650px) and (orientation:portrait){.s-theory .terms{bottom:14%}}
+
+/* A quiet entrance on each page change; the paper grid stays stationary. */
+.slide{transition:none}
+.slide.active{animation:slide-enter 380ms cubic-bezier(.22,.61,.36,1) both}
+@keyframes slide-enter{
+ from{opacity:0;transform:translateY(12px)}
+ to{opacity:1;transform:translateY(0)}
+}
+@media(prefers-reduced-motion:reduce){.slide.active{animation:none}}
+</style></head><body><div class="deck"><main class="stage" aria-label="生态翻译学，十八页课堂演示">
+<section class="slide active s-cover" aria-label="封面"><header class="running"><span>生态翻译学</span></header><div class="cover-copy"><h1>生态翻译学</h1><p class="english" lang="en">Eco-translatology</p></div><div class="pixel-note" aria-hidden="true"></div><p class="cover-kicker">环境 · 适应 · 选择</p><footer class="running-foot"><span></span><span class="folio">01 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide s-example" aria-label="同一句话，不同的翻译"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">同一句话，为什么有不同的翻译？</h2><div class="example-layout"><div class="source-phrase"><p class="language-label">同一句话</p><p class="korean" lang="ko">잘 부탁드립니다.</p></div><div class="situations"><div><p class="context-label">初次见面 ／ 新员工向同事介绍自己</p><p class="translation">今后请大家多多关照。</p></div><div><p class="context-label">请人帮忙 ／ 委托别人处理事情</p><p class="translation">这件事就拜托您了。</p></div></div></div><p class="takeaway">翻译选择，与使用环境有关。</p><footer class="running-foot"><span></span><span class="folio">02 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide s-theory" aria-label="生态翻译学是什么"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">生态翻译学是什么？</h2><p class="author"><strong>胡庚申</strong>提出并发展</p><p class="definition"><span>从整体关系出发，关注译者怎样</span><span>在翻译环境中作出适应与选择。</span></p><figure class="portrait"><img src="assets/hu-lecture-enhanced.png" alt="胡庚申" width="1542" height="1020"></figure><div class="terms"><div class="term">环境<small>原文、读者、文化、任务</small></div><div class="term">适应<small>理解与回应条件</small></div><div class="term">选择<small>选择表达方式</small></div></div><footer class="running-foot"><span>通俗概括 · Hu, 2003</span><span class="folio">03 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed analogy" aria-label="为什么叫“生态”？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">为什么叫“生态”？</h2><div class="page-body"><div class="parallel"><div><p class="eyebrow">植物移栽</p><h3 class="large-word">植物与环境</h3><p class="support">土壤、水分、气候<br>共同影响植物的生长。</p></div><div><p class="eyebrow">理解翻译的一个比喻</p><h3 class="large-word">翻译与环境</h3><p class="support">语言、文化、读者、用途<br>共同影响译者的判断。</p></div></div><p class="closing-line">关注事物之间的联系，以及它们怎样相互影响。</p></div><footer class="running-foot"><span><a href="https://www.cp.com.cn/book/f392ee5c-b.html" target="_blank" rel="noopener">胡庚申，2013 · 概念示意</a></span><span class="folio">04 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed environment" aria-label="翻译生态环境包括什么？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">翻译生态环境包括什么？</h2><div class="page-body"><div class="open-grid four"><div class="open-cell"><h3>文本与语言</h3><p>原文的内容与风格<br>两种语言的表达习惯</p></div><div class="open-cell"><h3>文化与社会</h3><p>文化习惯、背景知识<br>与具体社会语境</p></div><div class="open-cell"><h3>参与者</h3><p>作者、译者、读者<br>以及委托方等</p></div><div class="open-cell"><h3>任务条件</h3><p>用途、发布方式<br>以及篇幅等要求</p></div></div><p class="closing-line">同一段内容，用于字幕、教材或宣传介绍，处理方式可能不同。</p></div><footer class="running-foot"><span><a href="https://doi.org/10.1080/0907676X.2003.9961481" target="_blank" rel="noopener">Hu, 2003</a></span><span class="folio">05 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed translator" aria-label="译者在其中做什么？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">译者在其中做什么？</h2><div class="page-body"><p class="lead-line">理解、判断、协调，最后作出选择。</p><div class="role-layout"><div class="role-center"><span class="role-name">译者</span><small>发挥主动判断的作用</small></div><div class="role-list"><div><h3>理解原文</h3><p>内容是什么，语气与风格怎样？</p></div><div><h3>考虑读者</h3><p>读者知道什么，需要解释什么？</p></div><div><h3>协调要求</h3><p>怎样兼顾原文、读者与具体任务？</p></div></div></div><p class="closing-line">“译者中心”：发挥能动性，也要对自己的选择负责。</p></div><footer class="running-foot"><span><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">胡庚申，2011</a></span><span class="folio">06 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed adaptation" aria-label="什么是“适应”？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">什么是“适应”？</h2><div class="page-body"><p class="lead-line">先理解翻译面对的条件。</p><div class="question-grid"><div><span>原文</span><p>讲什么？<br>带着怎样的语气？</p></div><div><span>读者</span><p>给谁看？<br>对方了解多少？</p></div><div><span>场合</span><p>在哪里使用？<br>有什么具体要求？</p></div></div><div class="example-strip"><p lang="ko" class="ko-inline">잘 부탁드립니다.</p><p>先了解人物关系与场景，再判断这句话的意思。</p></div></div><footer class="running-foot"><span><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">胡庚申，2011</a></span><span class="folio">07 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed selection" aria-label="什么是“选择”？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">什么是“选择”？</h2><div class="page-body"><p class="lead-line">根据已经理解的条件，决定怎样表达。</p><div class="choice-pair"><div><p class="eyebrow">初次见面</p><p class="choice-tx">今后请大家多多关照。</p></div><div><p class="eyebrow">请人帮忙</p><p class="choice-tx">这件事就拜托您了。</p></div></div><div class="cycle" aria-label="理解条件、作出选择、检查效果、调整选择，循环进行"><span>理解条件</span><i aria-hidden="true">→</i><span>作出选择</span><i aria-hidden="true">→</i><span>检查效果</span><i aria-hidden="true">→</i><span>调整选择</span></div><p class="closing-line">适应与选择相互联系，会在翻译过程中反复发生。</p></div><footer class="running-foot"><span><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">胡庚申，2011</a></span><span class="folio">08 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed dimensions" aria-label="从哪三个方面看翻译选择？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">从哪三个方面看翻译选择？</h2><div class="page-body"><div class="dimension-grid"><div><h3>语言维</h3><p>怎样表达<br>清楚、自然？</p></div><div><h3>文化维</h3><p>怎样传递<br>文化含义？</p></div><div><h3>交际维</h3><p>怎样体现<br>说话意图？</p></div></div><p class="closing-line">三个维度相互联系，共同帮助我们理解具体的翻译选择。</p></div><footer class="running-foot"><span><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">胡庚申，2011</a></span><span class="folio">09 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed language" aria-label="语言维：怎样表达？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">语言维：怎样表达？</h2><div class="page-body"><p class="scene">情境：说话人指着自己手里的书。</p><div class="sentence-pair"><div><p class="eyebrow">韩语</p><p lang="ko" class="ko-example">제가 어제 산 책이에요.</p></div><div><p class="eyebrow">中文</p><p class="zh-example">这是我昨天买的书。</p></div></div><div class="language-notes"><div><p lang="ko" class="ko-inline">제가 어제 산</p><p>我昨天买的</p></div><div><p lang="ko" class="ko-inline">책</p><p>书</p></div><div><p lang="ko" class="ko-inline">이에요</p><p>结合中文句式处理</p></div></div><p class="closing-line">根据上下文与中文表达习惯，组织词语和句子。</p></div><footer class="running-foot"><span><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">胡庚申，2011</a> · 例句为教学示例</span><span class="folio">10 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed revision-example" aria-label="文化维：把动作背后的寓意译出来"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">文化维：把动作背后的寓意译出来</h2><div class="page-body"><p class="scene">情境：面向中国读者的韩国周岁习俗介绍。</p><p class="revision-source" lang="ko">돌잡이에서 실을 잡았어요.</p><div class="revision-pair"><div><p class="eyebrow">只呈现动作</p><h3>抓周时，抓到了线。</h3><p class="explain">读者知道抓了什么，却未必明白这为何值得一提。</p></div><div><p class="eyebrow">补出必要的文化信息</p><h3>抓周时，抓到了<br>寓意长寿的线。</h3><p class="explain">“线”承载着家人对孩子健康长寿的祝愿。</p></div></div><p class="closing-line">文化维的选择：依据介绍用途，补出理解所需的象征意义。</p></div><footer class="running-foot"><span>自拟例句 · <a href="https://koreana.or.kr/koreana/na/ntt/selectNttInfo.do?bbsId=1118&amp;nttSn=52353" target="_blank" rel="noopener">习俗依据：Koreana</a></span><span class="folio">11 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed revision-example" aria-label="交际维：从字面意思到说话意图"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">交际维：从字面意思到说话意图</h2><div class="page-body"><p class="scene">情境：店员问是否需要袋子，顾客摆手回应。</p><p class="revision-source" lang="ko">괜찮아요.</p><div class="revision-pair"><div><p class="eyebrow">脱离语境的字面译法</p><h3>没关系。</h3><p class="explain">中文读者可能理解成“不要紧”，<br>仍不清楚顾客要不要袋子。</p></div><div><p class="eyebrow">结合交际意图的译法</p><h3>不用了，谢谢。</h3><p class="explain">明确表达婉拒；“谢谢”体现礼貌语气。</p></div></div><p class="closing-line">交际维的选择：让中文读者识别出“礼貌谢绝”这一意图。</p></div><footer class="running-foot"><span>自拟情境 · 理论分析参照胡庚申，2011</span><span class="folio">12 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed quiz" aria-label="一起选一个译法"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">一起选一个译法</h2><div class="page-body"><p class="scene">新员工第一天向同事介绍自己。</p><p lang="ko" class="quiz-source">앞으로 잘 부탁드립니다.</p><div class="answer-options"><div><span class="option-letter" lang="en">A</span><p>今后请大家多多关照。</p></div><div><span class="option-letter" lang="en">B</span><p>以后这件事就拜托大家了。</p></div></div><p class="closing-line">你会选哪一个？判断依据是什么？</p></div><footer class="running-foot"><span></span><span class="folio">13 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed analysis" aria-label="把环境、适应、选择连起来"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">把环境、适应、选择连起来</h2><div class="page-body"><div class="analysis-layout"><div class="analysis-rows"><div><span>环境</span><p>新员工与同事初次见面。</p></div><div><span>语言</span><p>“请大家多多关照”符合中文表达习惯。</p></div><div><span>文化</span><p>体现初次见面的礼貌与人际关系。</p></div><div><span>交际</span><p>希望今后相处、合作顺利。</p></div></div><div class="analysis-result"><p class="eyebrow">这个情境下的选择</p><p>今后请大家<br>多多关照。</p></div></div><div class="switch-scene"><span>换个情境</span><p>请人帮忙处理材料 → 这件事就拜托您了。</p></div></div><footer class="running-foot"><span></span><span class="folio">14 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed evaluation" aria-label="怎样判断译得合适？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">怎样判断译得合适？</h2><div class="page-body"><div class="open-grid four evaluation-grid"><div class="open-cell"><h3>原文意思</h3><p>重要内容有没有保留？</p></div><div class="open-cell"><h3>语言表达</h3><p>表达是否清楚、自然？</p></div><div class="open-cell"><h3>文化含义</h3><p>是否传递恰当，避免误解？</p></div><div class="open-cell"><h3>交际与任务</h3><p>是否体现意图，符合使用要求？</p></div></div><div class="evaluation-note"><span>整合适应选择度</span><p>综合考察译文对多方面条件的适应情况。</p></div></div><footer class="running-foot"><span><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">胡庚申，2011</a></span><span class="folio">15 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed limits" aria-label="理解这一理论时，注意什么？"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">理解这一理论时，注意什么？</h2><div class="page-body"><div class="cautions"><div><h3>适应环境，需要依据</h3><p>结合原文和任务，说明为什么这样选择。</p></div><div><h3>三个维度，相互联系</h3><p>一个例子可以同时涉及语言、文化和交际。</p></div><div><h3>分析，需要落到具体表达</h3><p>改了什么？为什么改？产生了什么效果？</p></div></div><p class="closing-line">能够解释选择的理由，才算把理论用到了例子里。</p></div><footer class="running-foot"><span></span><span class="folio">16 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed conclusion" aria-label="我对生态翻译学的理解"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">我对生态翻译学的理解</h2><div class="page-body"><p class="conclusion-thesis">翻译选择的理由，<br>要放回具体环境中解释。</p><div class="conclusion-detail"><div><h3>它的价值</h3><p>把原文、读者、文化与任务联系起来，<br>为译者的判断提供分析框架。</p></div><div><h3>它的边界</h3><p>具体译法仍需语境与文本证据支持，<br>理论本身不会自动给出唯一答案。</p></div></div></div><footer class="running-foot"><span></span><span class="folio">17 <span class="slash">/</span> 18</span></footer></section>
+<section class="slide composed references" aria-label="参考文献"><header class="running"><span>生态翻译学</span></header><h2 class="page-heading">参考文献</h2><div class="page-body"><div class="bibliography"><div><p class="reference-author">Hu, G.（2003）</p><p><a href="https://doi.org/10.1080/0907676X.2003.9961481" target="_blank" rel="noopener" lang="en">Translation as adaptation and selection.</a><br><span lang="en">Perspectives, 11(4), 283–291.</span></p></div><div><p class="reference-author">胡庚申（2011）</p><p><a href="https://www.scribd.com/document/805371306/生态翻译学的研究焦点与理论视角-胡庚申" target="_blank" rel="noopener">生态翻译学的研究焦点与理论视角。</a><br>《中国翻译》，第2期，5—9页。</p></div><div><p class="reference-author">胡庚申（2013）</p><p><a href="https://www.cp.com.cn/book/f392ee5c-b.html" target="_blank" rel="noopener">生态翻译学：建构与诠释。</a><br>北京：商务印书馆。</p></div></div><p class="reference-note">韩汉短句为教学示例，译法依据所设情境讨论。</p></div><footer class="running-foot"><span>谢谢大家。</span><span class="folio">18 <span class="slash">/</span> 18</span></footer></section></main></div><nav class="controls" aria-label="演示控制"><button onclick="show(current-1)" aria-label="上一页">←</button><button onclick="show(current+1)" aria-label="下一页">→</button><button onclick="document.getElementById(&quot;contents&quot;).showModal()">目录</button><button onclick="document.documentElement.requestFullscreen()">全屏</button></nav><dialog id="contents" class="contents-dialog"><button class="contents-close" aria-label="关闭目录" onclick="this.parentElement.close()">×</button><h2>生态翻译学 · 目录</h2><div class="contents-list"></div></dialog><script>
+  // Plain vanilla navigation: arrows, space, home/end, swipe.
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let current = 0;
+  function show(i) {
+    if (i < 0) i = 0;
+    if (i > slides.length - 1) i = slides.length - 1;
+    slides[current].classList.remove('active');
+    slides[i].classList.add('active');
+    current = i; slides.forEach((s,n)=>s.setAttribute('aria-hidden',String(n!==i))); history.replaceState(null,'','#'+(i+1));
+  }
+  document.addEventListener('keydown', (e) => { if(document.getElementById('contents').open)return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); show(current + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp')               { e.preventDefault(); show(current - 1); }
+    else if (e.key === 'Home')                                            { e.preventDefault(); show(0); }
+    else if (e.key === 'End')                                             { e.preventDefault(); show(slides.length - 1); }
+  });
+  let tx = null;
+  document.addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (tx == null) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 40) show(current + (dx < 0 ? 1 : -1));
+    tx = null;
+  });
+slides.forEach((s,i)=>{const b=document.createElement("button");b.innerHTML="<span>"+String(i+1).padStart(2,"0")+"</span>"+s.getAttribute("aria-label");b.onclick=()=>{show(i);document.getElementById("contents").close()};document.querySelector(".contents-list").appendChild(b)});show(Math.max(0,Math.min(slides.length-1,Number(location.hash.slice(1)||1)-1)));
+</script></body></html>
