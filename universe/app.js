@@ -57,8 +57,8 @@ const artifacts = {
     meta: '2026 · HTML PRESENTATION · CHINESE',
     description: '以“翻译生态环境—适应与选择—三维转换”为主线，整理生态翻译学的核心概念，并配有适合手机阅读的中文发表稿。',
     links: [
-      ['查看演示', '../'],
-      ['查看发表稿', '../script.html']
+      ['查看演示', '../eco-translatology/'],
+      ['查看发表稿', '../eco-translatology/script.html']
     ]
   },
   green: {
