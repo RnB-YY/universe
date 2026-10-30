@@ -104,6 +104,40 @@ const artifacts = {
   }
 };
 
+// One taxonomy record per project; files remain grouped in artifacts.links.
+const taxonomy = {
+ about: {label:'关于我', categories:['个人简介','研究方向']},
+ academic: {label:'学术研究', categories:['硕士论文研究','课程发表','文献阅读']},
+ portfolio: {label:'设计作品', categories:['作品集项目','视觉实验','空间设计']},
+ archive: {label:'资料收藏', categories:['朋友分享','参考案例','待整理资料']}
+};
+const projectIndex = [
+ {id:'parkplan',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
+ {id:'eco',world:'academic',category:'课程发表',language:'中文',year:'2026'},
+ {id:'prehistoric',world:'academic',category:'课程发表',language:'韩语',year:'2026'},
+ {id:'green',world:'academic',category:'文献阅读',language:'韩语',year:'2026'},
+ {id:'sensory',world:'portfolio',category:'作品集项目',language:'中文',year:'未标注'},
+ {id:'childfriendly',world:'archive',category:'朋友分享',language:'韩语',year:'未标注'},
+ {id:'profile',world:'about',category:'个人简介',language:'中文',year:'未标注'}
+];
+const wf=document.getElementById('worldFilter'),cf=document.getElementById('categoryFilter'),lf=document.getElementById('languageFilter'),yf=document.getElementById('yearFilter'),search=document.getElementById('projectSearch');
+function options(select,values,label){select.replaceChildren(new Option(label,''),...values.map(v=>new Option(v.label||v,v.value||v)));}
+options(wf,Object.entries(taxonomy).map(([value,t])=>({value,label:t.label})),'全部星球');
+function categories(){options(cf,wf.value?taxonomy[wf.value].categories:Object.values(taxonomy).flatMap(t=>t.categories),'全部分类');}
+function renderProjects(){
+ const query=search.value.trim().toLocaleLowerCase();
+ const found=projectIndex.filter(p=>(!wf.value||p.world===wf.value)&&(!cf.value||p.category===cf.value)&&(!lf.value||p.language===lf.value)&&(!yf.value||p.year===yf.value)&&(!query||[artifacts[p.id].title,artifacts[p.id].description,p.category,p.language,taxonomy[p.world].label].join(' ').toLocaleLowerCase().includes(query)));
+ const root=document.getElementById('projectResults');root.replaceChildren();
+ document.getElementById('resultCount').textContent=`${found.length} 个项目`;
+ found.forEach(p=>{const item=artifacts[p.id],button=document.createElement('button');button.type='button';button.className='catalogue-item';const title=document.createElement('span'),meta=document.createElement('small');title.textContent=item.title;meta.textContent=`${taxonomy[p.world].label} / ${p.category} · ${p.language} · ${p.year} · ${item.links.length ? item.links.length+' 个文件入口':'整理中'}`;button.append(title,meta);button.addEventListener('click',()=>openArtifact(p.id));root.append(button);});
+ if(!found.length){const empty=document.createElement('p');empty.className='empty-results';empty.textContent='此分类暂无项目，或没有符合筛选条件的内容。';root.append(empty);}
+}
+function browseCategory(world,category){wf.value=world;categories();cf.value=category;lf.value='';yf.value='';search.value='';renderProjects();openCatalogue();}
+document.querySelectorAll('[data-categories]').forEach(root=>{const world=root.dataset.categories;taxonomy[world].categories.forEach((category,i)=>{const button=document.createElement('button');button.type='button';button.className='category-entry';const label=document.createElement('b'),meta=document.createElement('small');label.textContent=category;const count=projectIndex.filter(p=>p.world===world&&p.category===category).length;meta.textContent=count ? count+' 个项目 →':'待收录 →';button.append(label,meta);button.addEventListener('click',()=>browseCategory(world,category));root.append(button);});});
+wf.addEventListener('change',()=>{categories();renderProjects();});[cf,lf,yf].forEach(e=>e.addEventListener('change',renderProjects));search.addEventListener('input',renderProjects);
+document.getElementById('clearFilters').addEventListener('click',()=>{wf.value='';categories();lf.value='';yf.value='';search.value='';renderProjects();});
+categories();renderProjects();
+
 function pauseOrbits(paused) {
   body.classList.toggle('orbits-paused', paused);
 }
@@ -148,7 +182,8 @@ function closeWorld() {
 function openArtifact(id) {
   const item = artifacts[id];
   if (!item) return;
-  document.getElementById('artifactType').textContent = item.type;
+  const record=projectIndex.find(p=>p.id===id);
+  document.getElementById('artifactType').textContent = record ? taxonomy[record.world].label+' / '+record.category+' / 项目' : item.type;
   document.getElementById('artifactTitle').textContent = item.title;
   document.getElementById('artifactMeta').textContent = item.meta;
   document.getElementById('artifactDescription').textContent = item.description;
