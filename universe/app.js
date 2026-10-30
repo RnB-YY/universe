@@ -37,6 +37,13 @@ function loadBiome(name) {
 }
 
 const artifacts = {
+  childfriendly: {
+    type: 'FRIEND’S PRESENTATION · 朋友的研究展示',
+    title: '건강도시 관점에서 본 아동친화적 도시 공공공간의 생태경관 설계 전략 연구',
+    meta: 'KOREAN · PDF',
+    description: '朋友分享的研究展示：健康城市视角下儿童友好型城市公共空间的生态景观设计策略。保留原始 PDF 文件。',
+    links: [['查看 PDF 演示', '../child-friendly-landscape/presentation.pdf']]
+  },
   parkplan: {
     type: 'RESEARCH PLAN · 硕士论文研究计划',
     title: '近邻公园植被空间与老年人活动机会',
