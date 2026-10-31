@@ -6,10 +6,12 @@
   <meta name="theme-color" content="#050915">
   <meta name="description" content="유상호的个人知识星系：学术发表、视觉作品与研究资料。">
   <title>YOO SANGHO · 个人知识星系</title>
-  <link rel="stylesheet" href="styles.css?v=taxonomy-20261030">
+  <link rel="stylesheet" href="styles.css?v=orbital-20261101h">
+  <link rel="stylesheet" href="orbital.css?v=orbital-20261101h">
 </head>
 <body>
-  <canvas id="starfield" aria-hidden="true"></canvas>
+  <canvas id="cosmos" aria-hidden="true"></canvas>
+  <div class="veil" aria-hidden="true"></div>
   <div class="grain" aria-hidden="true"></div>
 
   <header class="site-header">
@@ -30,42 +32,30 @@
       <p class="orbit-intro">这里收纳我关于景观、生态、翻译与公共空间的学习轨迹。选择一颗行星，进入它的地表。</p>
     </div>
 
+    <!-- Planets are positioned every frame by cosmos.js over the rendered bodies. -->
     <div class="system" id="system" aria-label="环绕恒星的四个内容星球">
-      <div class="orbit-ring ring-1" aria-hidden="true"></div>
-      <div class="orbit-ring ring-2" aria-hidden="true"></div>
-      <div class="orbit-ring ring-3" aria-hidden="true"></div>
-      <div class="orbit-ring ring-4" aria-hidden="true"></div>
-
-      <div class="star" aria-label="个人知识星系的中心恒星">
+      <div class="star" id="starAnchor" aria-label="个人知识星系的中心恒星">
         <span class="star-core"></span>
         <span class="star-name">유상호</span>
-        <span class="star-sub">knowledge in orbit</span>
+        <span class="star-sub">KNOWLEDGE IN ORBIT</span>
       </div>
 
-      <div class="planet-orbit orbit-1" style="--start:-18deg;--duration:38s">
-        <button class="planet planet-about" type="button" data-world="about" aria-label="进入个人简介星球">
-          <span class="planet-face"><i></i></span>
-          <span class="planet-label"><b>关于我</b><small>ORIGIN</small></span>
-        </button>
-      </div>
-      <div class="planet-orbit orbit-2" style="--start:112deg;--duration:52s">
-        <button class="planet planet-academic" type="button" data-world="academic" aria-label="进入学术研究星球">
-          <span class="planet-face"><i></i></span>
-          <span class="planet-label"><b>学术研究</b><small>CANOPY</small></span>
-        </button>
-      </div>
-      <div class="planet-orbit orbit-3" style="--start:208deg;--duration:67s">
-        <button class="planet planet-portfolio" type="button" data-world="portfolio" aria-label="进入设计作品星球">
-          <span class="planet-face"><i></i></span>
-          <span class="planet-label"><b>设计作品</b><small>BLOOM</small></span>
-        </button>
-      </div>
-      <div class="planet-orbit orbit-4" style="--start:302deg;--duration:83s">
-        <button class="planet planet-archive" type="button" data-world="archive" aria-label="进入资料收藏星球">
-          <span class="planet-face"><i></i></span>
-          <span class="planet-label"><b>资料收藏</b><small>STRATA</small></span>
-        </button>
-      </div>
+      <button class="planet planet-academic" type="button" data-world="academic" aria-label="进入学术研究星球">
+        <span class="planet-face"><i></i></span>
+        <span class="planet-label"><b>学术研究</b><small>CANOPY · 02</small><em>硕士论文研究 · 课程发表 · 文献阅读</em></span>
+      </button>
+      <button class="planet planet-about" type="button" data-world="about" aria-label="进入个人简介星球">
+        <span class="planet-face"><i></i></span>
+        <span class="planet-label"><b>关于我</b><small>ORIGIN · 01</small><em>个人简介 · 研究方向</em></span>
+      </button>
+      <button class="planet planet-portfolio" type="button" data-world="portfolio" aria-label="进入设计作品星球">
+        <span class="planet-face"><i></i></span>
+        <span class="planet-label"><b>设计作品</b><small>BLOOM · 03</small><em>作品集项目 · 视觉实验 · 空间设计</em></span>
+      </button>
+      <button class="planet planet-archive" type="button" data-world="archive" aria-label="进入资料收藏星球">
+        <span class="planet-face"><i></i></span>
+        <span class="planet-label"><b>资料收藏</b><small>STRATA · 04</small><em>朋友分享 · 参考案例 · 待整理资料</em></span>
+      </button>
     </div>
 
     <div class="orbit-guide" aria-hidden="true">
@@ -133,6 +123,7 @@
     <p class="artifact-foot">节点会随着新的内容继续生长。</p>
   </dialog>
 
-  <script src="app.js?v=taxonomy-20261031"></script>
+  <script src="cosmos.js?v=orbital-20261101h"></script>
+  <script src="app.js?v=orbital-20261101h"></script>
 </body>
 </html>

@@ -26,6 +26,7 @@ const biomeAssets = {
 };
 const biomeLoads = new Map();
 let worldVisit = 0;
+let lastWorld = 'about';
 
 function loadBiome(name) {
   if (!biomeLoads.has(name)) {
@@ -148,8 +149,12 @@ function openWorld(name) {
   closeCatalogue();
   pauseOrbits(true);
   body.classList.add('is-traveling');
-  const travel = new Promise(resolve => window.setTimeout(resolve, body.dataset.motion === 'reduced' ? 0 : 560));
-  Promise.all([loadBiome(name), travel]).then(() => {
+  lastWorld = name;
+  // cosmos.js flies the camera into the planet; fall back to a plain delay without it.
+  const travel = window.cosmos ? window.cosmos.travel(name) : new Promise(resolve => window.setTimeout(resolve, body.dataset.motion === 'reduced' ? 0 : 560));
+  // Wait briefly for the surface image, but never let a slow decode block navigation.
+  const scene = Promise.race([loadBiome(name), new Promise(resolve => window.setTimeout(resolve, 1500))]);
+  Promise.all([scene, travel]).then(() => {
     if (visit !== worldVisit) return;
     surfaceShell.dataset.biome = name;
     document.querySelectorAll('[data-world-panel]').forEach(panel => {
@@ -176,7 +181,9 @@ function closeWorld() {
     panel.setAttribute('aria-hidden', 'true');
   });
   if (body.dataset.motion !== 'reduced') pauseOrbits(false);
-  document.querySelector('[data-world]')?.focus({preventScroll:true});
+  window.cosmos?.arrive();
+  // The stage stays inert until the surface observer runs, so focus on the next task.
+  setTimeout(() => document.querySelector(`.system .planet[data-world="${lastWorld}"]`)?.focus({preventScroll:true}));
 }
 
 function openArtifact(id) {
@@ -236,24 +243,19 @@ listToggle.addEventListener('click', openCatalogue);
 listClose.addEventListener('click', closeCatalogue);
 scrim.addEventListener('click', closeCatalogue);
 
-system.addEventListener('pointerenter', () => pauseOrbits(true));
-system.addEventListener('pointerdown', () => pauseOrbits(true), {capture:true});
-system.addEventListener('pointerleave', () => {
-  if (body.dataset.motion !== 'reduced' && !catalogue.classList.contains('is-open')) pauseOrbits(false);
-});
-
 motionToggle.addEventListener('click', () => {
   const reduced = body.dataset.motion !== 'reduced';
   body.dataset.motion = reduced ? 'reduced' : 'full';
   pauseOrbits(reduced);
   motionToggle.setAttribute('aria-pressed', String(reduced));
   motionToggle.textContent = reduced ? '恢复轨道' : '暂停轨道';
-  localStorage.setItem('orbital-motion', body.dataset.motion);
-  cancelAnimationFrame(animationFrame);
-  drawStars();
+  try { localStorage.setItem('orbital-motion', body.dataset.motion); } catch {}
+  window.cosmos?.invalidate();
 });
 
-if (localStorage.getItem('orbital-motion') === 'reduced' || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+let storedMotion = null;
+try { storedMotion = localStorage.getItem('orbital-motion'); } catch {}
+if (storedMotion === 'reduced' || matchMedia('(prefers-reduced-motion: reduce)').matches) {
   body.dataset.motion = 'reduced';
   pauseOrbits(true);
   motionToggle.setAttribute('aria-pressed', 'true');
@@ -267,71 +269,6 @@ document.addEventListener('keydown', event => {
   else if (surfaceShell.classList.contains('is-visible')) closeWorld();
 });
 
-const canvas = document.getElementById('starfield');
-const context = canvas.getContext('2d');
-let stars = [];
-let pointer = {x:0,y:0};
-let animationFrame;
-
-function resizeStars() {
-  const ratio = Math.min(devicePixelRatio || 1, 2);
-  canvas.width = innerWidth * ratio;
-  canvas.height = innerHeight * ratio;
-  canvas.style.width = `${innerWidth}px`;
-  canvas.style.height = `${innerHeight}px`;
-  context.setTransform(ratio,0,0,ratio,0,0);
-  const count = Math.min(170, Math.floor((innerWidth * innerHeight) / 7200));
-  stars = Array.from({length:count}, (_, index) => ({
-    x:Math.random()*innerWidth,
-    y:Math.random()*innerHeight,
-    r:Math.random()*1.25+.25,
-    a:Math.random()*.65+.16,
-    z:index%3+1
-  }));
-}
-
-function drawStars(time=0) {
-  context.clearRect(0,0,innerWidth,innerHeight);
-  stars.forEach((star,index) => {
-    const drift = body.dataset.motion === 'reduced' ? 0 : Math.sin(time/1900+index)*.7;
-    const x = star.x + pointer.x*star.z*2 + drift;
-    const y = star.y + pointer.y*star.z*1.4;
-    context.beginPath();
-    context.fillStyle = `rgba(223,238,232,${star.a})`;
-    context.arc(x,y,star.r,0,Math.PI*2);
-    context.fill();
-  });
-  if (body.dataset.motion !== 'reduced') animationFrame=requestAnimationFrame(drawStars);
-}
-
-addEventListener('pointermove', event => {
-  pointer.x=(event.clientX/innerWidth-.5)*-1;
-  pointer.y=(event.clientY/innerHeight-.5)*-1;
-});
-addEventListener('resize', () => {cancelAnimationFrame(animationFrame);resizeStars();drawStars();});
-resizeStars();
-drawStars();
-// Projected circular orbits: the labels stay upright as planets cross the tilted plane.
-const orbitNodes=[...document.querySelectorAll('.planet-orbit')];
-const phases=[.4,2.4,4.5,5.7];
-const radii=[.145,.24,.345,.455];
-let orbitalLast=performance.now();
-function orbitalFrame(now){
- const dt=Math.min((now-orbitalLast)/1000,.05);orbitalLast=now;
- const stopped=body.classList.contains('orbits-paused')||body.dataset.motion==='reduced'||document.hidden;
- const size=system.clientWidth;const tilt=-22*Math.PI/180;
- orbitNodes.forEach((node,i)=>{
-  if(!stopped)phases[i]+=dt*(.065-i*.01);
-  const x=Math.cos(phases[i])*size*radii[i],y=Math.sin(phases[i])*size*radii[i]*.46;
-  node.style.left=`${size/2+x*Math.cos(tilt)-y*Math.sin(tilt)}px`;
-  node.style.top=`${size/2+x*Math.sin(tilt)+y*Math.cos(tilt)}px`;
-  node.style.zIndex=String(10+Math.round(Math.sin(phases[i])*3));
- });
- requestAnimationFrame(orbitalFrame);
-}
-requestAnimationFrame(orbitalFrame);
-system.addEventListener('focusin',()=>pauseOrbits(true));
-system.addEventListener('focusout',()=>{if(body.dataset.motion!=='reduced'&&!surfaceShell.classList.contains('is-visible'))pauseOrbits(false)});
 new MutationObserver(()=>{
  const active=surfaceShell.classList.contains('is-visible');
  body.classList.toggle('surface-open',active);
