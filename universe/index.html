@@ -6,8 +6,9 @@
   <meta name="theme-color" content="#050915">
   <meta name="description" content="유상호的个人知识星系：学术发表、视觉作品与研究资料。">
   <title>YOO SANGHO · 个人知识星系</title>
-  <link rel="stylesheet" href="styles.css?v=orbital-20261101h">
-  <link rel="stylesheet" href="orbital.css?v=orbital-20261101h">
+  <link rel="stylesheet" href="styles.css?v=worlds-20261103c">
+  <link rel="stylesheet" href="orbital.css?v=worlds-20261103c">
+  <link rel="stylesheet" href="worlds.css?v=worlds-20261103c">
 </head>
 <body>
   <canvas id="cosmos" aria-hidden="true"></canvas>
@@ -59,7 +60,7 @@
     </div>
 
     <div class="orbit-guide" aria-hidden="true">
-      <span>01 — 选择行星</span><span>02 — 进入地表</span><span>03 — 分类查找项目</span>
+      <span>01 — 选择行星</span><span>02 — 观测地表信号</span><span>03 — 降落到区域</span>
     </div>
   </main>
 
@@ -75,43 +76,6 @@
   </aside>
   <div class="scrim" id="scrim" hidden></div>
 
-  <section class="surface-shell" id="surfaceShell" aria-hidden="true">
-    <header class="surface-header">
-      <button class="return-button" id="returnOrbit" type="button"><span>←</span> 返回轨道</button>
-      <div class="surface-coordinate"><span id="worldCode">CANOPY–02</span><small>planetary surface</small></div>
-    </header>
-
-    <div class="world world-about" data-world-panel="about" role="region" aria-label="自述星球：荒漠峡谷" aria-hidden="true">
-      <div class="sky-copy"><p class="eyebrow">ORIGIN · 自述 · 荒漠峡谷</p><h2>我从环境开始，<br>寻找人与场所的关系。</h2><p>学习与创作横跨景观、生态、健康城市、翻译和公共空间。这里不是一份固定简历，而是一片会继续生长的起点。</p></div>
-      <div class="horizon horizon-about" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="category-garden" data-categories="about" aria-label="选择内容分类"></div>
-    </div>
-
-    <div class="world world-academic" data-world-panel="academic" role="region" aria-label="学术研究星球：迷雾雨林" aria-hidden="true">
-      <div class="sky-copy"><p class="eyebrow">CANOPY · 学术研究 · 迷雾雨林</p><h2>在林间，<br>寻找研究的线索。</h2><p>按硕士论文研究、课程发表与文献阅读进入项目。演示与讲稿收纳在同一项目中。</p></div>
-      <div class="horizon horizon-academic" aria-hidden="true"><i></i><i></i><i></i></div>
-      
-      
-      <div class="category-garden" data-categories="academic" aria-label="选择内容分类"></div>
-    </div>
-
-    <div class="world world-portfolio" data-world-panel="portfolio" role="region" aria-label="设计作品星球：晨雾湿地" aria-hidden="true">
-      <div class="sky-copy"><p class="eyebrow">BLOOM · 设计作品 · 晨雾湿地</p><h2>感官经验<br>以不同形态开花。</h2><p>照片、声音、气味与身体经验，被整理成可以观看和讨论的空间提案。</p></div>
-      <div class="horizon horizon-portfolio" aria-hidden="true"><i></i><i></i><i></i></div>
-      
-      <div class="category-garden" data-categories="portfolio" aria-label="选择内容分类"></div>
-    </div>
-
-    <div class="world world-archive" data-world-panel="archive" role="region" aria-label="资料收藏星球：蓝色冰川" aria-hidden="true">
-      <div class="sky-copy"><p class="eyebrow">STRATA · 资料收藏 · 蓝色冰川</p><h2>材料在时间中沉积，<br>留下可追溯的线索。</h2><p>朋友分享、参考案例与待整理材料，在这里分门别类保存。</p></div>
-      <div class="horizon horizon-archive" aria-hidden="true"><i></i><i></i><i></i></div>
-      
-      
-      <div class="category-garden" data-categories="archive" aria-label="选择内容分类"></div>
-    </div>
-
-    <div class="surface-legend"><span><i></i> 选择分类，查看项目</span><small>拖动或滚动不影响地表，直接点击节点即可</small></div>
-  </section>
 
   <dialog class="artifact-panel" id="artifactPanel">
     <button class="icon-button panel-close" id="artifactClose" type="button" aria-label="关闭项目详情">×</button>
@@ -123,7 +87,9 @@
     <p class="artifact-foot">节点会随着新的内容继续生长。</p>
   </dialog>
 
-  <script src="cosmos.js?v=orbital-20261101h"></script>
-  <script src="app.js?v=orbital-20261101h"></script>
+  <script src="cosmos.js?v=worlds-20261103c"></script>
+  <script src="app.js?v=worlds-20261103c"></script>
+  <script src="worlds-data.js?v=worlds-20261103c"></script>
+  <script src="worlds.js?v=worlds-20261103c"></script>
 </body>
 </html>

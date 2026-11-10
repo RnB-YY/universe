@@ -32,7 +32,7 @@ const PLANETS = [
   {world:'portfolio', a:2.74, e:.045, incl:2.8, node:146, phase:4.15, period:120, dir:1, radius:.215, spin:54, tilt:22,
     look:{c1:'#0c2d33', c2:'#3c807d', c3:'#a5d0c4', atm:'#86dbe0', bands:.16, ice:0, clouds:.3, spec:.42, freq:2.9, seed:11.8}},
   {world:'archive', a:3.6, e:.06, incl:-1.6, node:204, phase:5.55, period:160, dir:1, radius:.2, spin:80, tilt:-24,
-    look:{c1:'#1c3350', c2:'#6f8fae', c3:'#e2edf4', atm:'#a6c8ee', bands:.05, ice:.85, clouds:.62, spec:.22, freq:3.1, seed:5.6}}
+    look:{c1:'#0c0a12', c2:'#3a3050', c3:'#8a78a8', atm:'#b49ad8', bands:.55, ice:0, clouds:.08, spec:.18, freq:3.1, seed:5.6}}
 ];
 const STAR = {radius:.27, extent:9};
 const OUTER = PLANETS[PLANETS.length - 1].a;
@@ -373,7 +373,10 @@ window.cosmos = {
       if (travel.k === 0) travel.planet = null;
     });
   },
-  invalidate() { dirty = true; }
+  invalidate() { dirty = true; },
+  // Apparent radius (NDC height units) of a planet at the end of travel(), so the
+  // planetary observation level can take over at exactly the same size.
+  focusRadius() { return 1.12 / (9 * Math.tan(comp.fov * DEG / 2)); }
 };
 
 // ---------------------------------------------------------------------------

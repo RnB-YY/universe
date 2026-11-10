@@ -1,8 +1,5 @@
 const body = document.body;
 const system = document.getElementById('system');
-const surfaceShell = document.getElementById('surfaceShell');
-const worldCode = document.getElementById('worldCode');
-const returnOrbit = document.getElementById('returnOrbit');
 const catalogue = document.getElementById('catalogue');
 const listToggle = document.getElementById('listToggle');
 const listClose = document.getElementById('listClose');
@@ -11,31 +8,6 @@ const motionToggle = document.getElementById('motionToggle');
 const artifactPanel = document.getElementById('artifactPanel');
 const artifactClose = document.getElementById('artifactClose');
 
-const worlds = {
-  about: 'ORIGIN–01',
-  academic: 'CANOPY–02',
-  portfolio: 'BLOOM–03',
-  archive: 'STRATA–04'
-};
-
-const biomeAssets = {
-  about: 'assets/world-desert-v1.webp',
-  academic: 'assets/world-rainforest-v1.webp',
-  portfolio: 'assets/world-wetland-v1.webp',
-  archive: 'assets/world-glacier-v1.webp'
-};
-const biomeLoads = new Map();
-let worldVisit = 0;
-let lastWorld = 'about';
-
-function loadBiome(name) {
-  if (!biomeLoads.has(name)) {
-    const scene = new Image();
-    scene.src = biomeAssets[name];
-    biomeLoads.set(name, scene.decode().catch(() => {}));
-  }
-  return biomeLoads.get(name);
-}
 
 const artifacts = {
   childfriendly: {
@@ -133,8 +105,6 @@ function renderProjects(){
  found.forEach(p=>{const item=artifacts[p.id],button=document.createElement('button');button.type='button';button.className='catalogue-item';const title=document.createElement('span'),meta=document.createElement('small');title.textContent=item.title;meta.textContent=`${taxonomy[p.world].label} / ${p.category} · ${p.language} · ${p.year} · ${item.links.length ? item.links.length+' 个文件入口':'整理中'}`;button.append(title,meta);button.addEventListener('click',()=>openArtifact(p.id));root.append(button);});
  if(!found.length){const empty=document.createElement('p');empty.className='empty-results';empty.textContent='此分类暂无项目，或没有符合筛选条件的内容。';root.append(empty);}
 }
-function browseCategory(world,category){wf.value=world;categories();cf.value=category;lf.value='';yf.value='';search.value='';renderProjects();openCatalogue();}
-document.querySelectorAll('[data-categories]').forEach(root=>{const world=root.dataset.categories;taxonomy[world].categories.forEach((category,i)=>{const button=document.createElement('button');button.type='button';button.className='category-entry';const label=document.createElement('b'),meta=document.createElement('small');label.textContent=category;const count=projectIndex.filter(p=>p.world===world&&p.category===category).length;meta.textContent=count ? count+' 个项目 →':'待收录 →';button.append(label,meta);button.addEventListener('click',()=>browseCategory(world,category));root.append(button);});});
 wf.addEventListener('change',()=>{categories();renderProjects();});[cf,lf,yf].forEach(e=>e.addEventListener('change',renderProjects));search.addEventListener('input',renderProjects);
 document.getElementById('clearFilters').addEventListener('click',()=>{wf.value='';categories();lf.value='';yf.value='';search.value='';renderProjects();});
 categories();renderProjects();
@@ -143,48 +113,6 @@ function pauseOrbits(paused) {
   body.classList.toggle('orbits-paused', paused);
 }
 
-function openWorld(name) {
-  if (!worlds[name]) return;
-  const visit = ++worldVisit;
-  closeCatalogue();
-  pauseOrbits(true);
-  body.classList.add('is-traveling');
-  lastWorld = name;
-  // cosmos.js flies the camera into the planet; fall back to a plain delay without it.
-  const travel = window.cosmos ? window.cosmos.travel(name) : new Promise(resolve => window.setTimeout(resolve, body.dataset.motion === 'reduced' ? 0 : 560));
-  // Wait briefly for the surface image, but never let a slow decode block navigation.
-  const scene = Promise.race([loadBiome(name), new Promise(resolve => window.setTimeout(resolve, 1500))]);
-  Promise.all([scene, travel]).then(() => {
-    if (visit !== worldVisit) return;
-    surfaceShell.dataset.biome = name;
-    document.querySelectorAll('[data-world-panel]').forEach(panel => {
-      const active = panel.dataset.worldPanel === name;
-      panel.classList.toggle('is-active', active);
-      panel.setAttribute('aria-hidden', String(!active));
-    });
-    worldCode.textContent = worlds[name] || 'ORBITAL–00';
-    surfaceShell.classList.add('is-visible');
-    surfaceShell.setAttribute('aria-hidden', 'false');
-    body.classList.remove('is-traveling');
-    returnOrbit.focus({preventScroll:true});
-  });
-}
-
-function closeWorld() {
-  worldVisit++;
-  body.classList.remove('is-traveling');
-  if (artifactPanel.open) artifactPanel.close();
-  surfaceShell.classList.remove('is-visible');
-  surfaceShell.setAttribute('aria-hidden', 'true');
-  document.querySelectorAll('[data-world-panel]').forEach(panel => {
-    panel.classList.remove('is-active');
-    panel.setAttribute('aria-hidden', 'true');
-  });
-  if (body.dataset.motion !== 'reduced') pauseOrbits(false);
-  window.cosmos?.arrive();
-  // The stage stays inert until the surface observer runs, so focus on the next task.
-  setTimeout(() => document.querySelector(`.system .planet[data-world="${lastWorld}"]`)?.focus({preventScroll:true}));
-}
 
 function openArtifact(id) {
   const item = artifacts[id];
@@ -228,16 +156,10 @@ function closeCatalogue() {
   catalogue.setAttribute('aria-hidden', 'true');
   listToggle.setAttribute('aria-expanded', 'false');
   scrim.hidden = true;
-  if (body.dataset.motion !== 'reduced' && !surfaceShell.classList.contains('is-visible')) pauseOrbits(false);
+  if (body.dataset.motion !== 'reduced') pauseOrbits(false);
 }
 
-document.querySelectorAll('[data-world]').forEach(button => {
-  button.addEventListener('click', () => openWorld(button.dataset.world));
-  button.addEventListener('pointerenter', () => loadBiome(button.dataset.world), {once:true});
-  button.addEventListener('focus', () => loadBiome(button.dataset.world), {once:true});
-});
 document.querySelectorAll('[data-artifact]').forEach(button => button.addEventListener('click', () => openArtifact(button.dataset.artifact)));
-returnOrbit.addEventListener('click', closeWorld);
 artifactClose.addEventListener('click', () => artifactPanel.close());
 listToggle.addEventListener('click', openCatalogue);
 listClose.addEventListener('click', closeCatalogue);
@@ -262,19 +184,16 @@ if (storedMotion === 'reduced' || matchMedia('(prefers-reduced-motion: reduce)')
   motionToggle.textContent = '恢复轨道';
 }
 
+
+catalogue.inert = true;
+artifactPanel.setAttribute('aria-labelledby','artifactTitle');
+
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   if (artifactPanel.open) artifactPanel.close();
   else if (catalogue.classList.contains('is-open')) closeCatalogue();
-  else if (surfaceShell.classList.contains('is-visible')) closeWorld();
+  else window.worlds?.up();
 });
 
-new MutationObserver(()=>{
- const active=surfaceShell.classList.contains('is-visible');
- body.classList.toggle('surface-open',active);
- document.getElementById('orbit').inert=active;
- document.querySelector('.site-header').inert=active;
-}).observe(surfaceShell,{attributes:true,attributeFilter:['class']});
-
-catalogue.inert = true;
-artifactPanel.setAttribute('aria-labelledby','artifactTitle');
+// Content and panels for the planetary levels (worlds.js).
+window.portfolio = {artifacts, taxonomy, projectIndex, openArtifact, closeCatalogue};

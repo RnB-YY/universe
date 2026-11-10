@@ -1,0 +1,95 @@
+/* Planetary levels (worlds.js): observation of one planet, and its regions.
+   The canvas carries the worlds; this layer only adds restrained archive typography. */
+#worldview{position:fixed;inset:0;z-index:30;width:100%;height:100%;opacity:0;pointer-events:none;background:#020306}
+.observation,.region{position:fixed;inset:0;z-index:32;opacity:0;visibility:hidden;transition:opacity .6s ease,visibility 0s .6s;color:var(--paper);--accent:#ffd18a;--atm:#9fd8e8}
+.observation.is-visible,.region.is-visible{opacity:1;visibility:visible;transition:opacity .8s ease .1s,visibility 0s}
+.observation{touch-action:none;cursor:grab}
+.observation:active{cursor:grabbing}
+
+/* Shared top bar */
+.world-bar{position:absolute;z-index:3;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:clamp(18px,3vw,34px) clamp(20px,4vw,58px);pointer-events:none}
+.world-back{pointer-events:auto;display:inline-flex;align-items:center;gap:10px;min-height:42px;padding:0 18px;border:1px solid #e9f1ff2e;border-radius:999px;background:#05080fa6;backdrop-filter:blur(10px);color:#e7e2d4;font:500 12px/1 var(--sans);letter-spacing:.12em;cursor:pointer;transition:border-color .3s ease,color .3s ease}
+.world-back span{color:var(--accent)}
+.world-back:hover,.world-back:focus-visible{border-color:var(--accent);color:#fff;outline:none}
+.world-coord{color:#8e98aa;font:500 9px/1.4 var(--sans);letter-spacing:.24em;text-align:right}
+
+/* LEVEL 02 · archive notes beside the planet */
+.obs-info{position:absolute;z-index:2;left:clamp(28px,5.6vw,104px);top:50%;transform:translateY(-50%);width:clamp(270px,30vw,460px);pointer-events:none}
+.obs-eyebrow{display:flex;align-items:center;gap:12px;margin:0 0 20px;color:var(--accent);font:600 10px/1.4 var(--sans);letter-spacing:.32em}
+.obs-eyebrow:before{content:"";width:30px;height:1px;background:linear-gradient(90deg,transparent,var(--accent))}
+.obs-title{margin:0;color:#f2ebda;font:400 clamp(34px,3.6vw,60px)/1.15 var(--serif);letter-spacing:.08em;text-shadow:0 2px 30px #000}
+.obs-name{margin:14px 0 0;color:#9aa4b4;font:500 10px/1.7 var(--sans);letter-spacing:.2em}
+.obs-quote{margin:30px 0 0;color:#e9e3d3;font:400 clamp(17px,1.45vw,22px)/1.6 var(--serif);letter-spacing:.05em}
+.obs-text{margin:12px 0 0;color:#e9f1ff99;font-size:13px;line-height:1.9}
+.obs-meta{margin:28px 0 0;padding-top:16px;border-top:1px solid #e9f1ff1a;display:grid;gap:9px}
+.obs-meta div{display:grid;grid-template-columns:64px 1fr;gap:12px;align-items:baseline}
+.obs-meta dt{color:#6f7a8c;font:500 9px/1.6 var(--sans);letter-spacing:.24em}
+.obs-meta dd{margin:0;color:#c9ced6;font-size:12px;line-height:1.6}
+.obs-hint{position:absolute;z-index:2;left:50%;bottom:clamp(18px,4vh,36px);transform:translateX(-50%);margin:0;color:#7c8698;font:500 10px/1 var(--sans);letter-spacing:.22em;white-space:nowrap;pointer-events:none}
+
+/* Surface-anchored signal nodes, positioned every frame by worlds.js */
+.obs-nodes{position:absolute;inset:0;z-index:1;pointer-events:none}
+.node{position:absolute;left:0;top:0;width:44px;height:44px;margin:-22px 0 0 -22px;padding:0;border:0;border-radius:50%;background:none;color:var(--paper);cursor:pointer;pointer-events:auto;opacity:0;will-change:transform,opacity;-webkit-tap-highlight-color:transparent}
+.node.is-back{pointer-events:none}
+.node-core{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#fff8ea;box-shadow:0 0 6px var(--accent),0 0 1px #fff}
+.node-ring{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px;border:1px solid var(--accent);border-radius:50%;opacity:.55;animation:node-pulse 4.8s ease-in-out infinite;transition:transform .4s var(--ease),opacity .3s ease}
+.node-ring:after{content:"";position:absolute;inset:-5px;border:1px solid var(--accent);border-radius:50%;opacity:0;transition:opacity .3s ease}
+.node-index{position:absolute;left:calc(50% + 9px);top:calc(50% - 15px);color:var(--accent);font:500 8px/1 var(--sans);letter-spacing:.12em;opacity:.7;text-shadow:0 0 6px #000;pointer-events:none;transition:opacity .3s ease}
+.node:hover .node-index,.node:focus-visible .node-index,.node.is-hovered .node-index,.node.is-selected .node-index{opacity:0}
+@keyframes node-pulse{0%,100%{transform:scale(.94);opacity:.45}50%{transform:scale(1.06);opacity:.7}}
+.node-label{position:absolute;top:50%;left:calc(50% + 26px);transform:translateY(-50%);display:block;white-space:nowrap;text-align:left;pointer-events:none;opacity:0;transition:opacity .3s ease}
+.node-label:before{content:"";position:absolute;top:.72em;right:calc(100% + 6px);width:14px;height:1px;background:linear-gradient(90deg,transparent,var(--accent))}
+.node[data-side="l"] .node-label{left:auto;right:calc(50% + 26px);text-align:right}
+.node[data-side="l"] .node-label:before{right:auto;left:calc(100% + 6px);background:linear-gradient(270deg,transparent,var(--accent))}
+.node-label b{display:block;color:#f2ebda;font:400 13px/1.3 var(--serif);letter-spacing:.1em;text-shadow:0 1px 10px #000,0 0 3px #000}
+.node-label small{display:block;max-height:0;overflow:hidden;opacity:0;margin-top:0;color:var(--accent);font:500 8.5px/1.4 var(--sans);letter-spacing:.2em;text-shadow:0 1px 8px #000;transition:opacity .3s ease,max-height .4s var(--ease),margin .4s var(--ease)}
+.node:hover .node-label,.node:focus-visible .node-label,.node.is-hovered .node-label,.node.is-selected .node-label{opacity:1}
+.node:hover .node-label small,.node:focus-visible .node-label small,.node.is-hovered .node-label small,.node.is-selected .node-label small{max-height:3em;margin-top:6px;opacity:1}
+.node:hover .node-ring,.node:focus-visible .node-ring,.node.is-hovered .node-ring,.node.is-selected .node-ring{animation:none;transform:scale(1.25);opacity:1}
+.node.is-selected .node-ring:after,.node:focus-visible .node-ring:after{opacity:.5}
+.node:focus-visible{outline:none}
+.observation.is-descending .node:not(.is-selected){opacity:0!important;transition:opacity .4s ease}
+
+/* LEVEL 03 · content layer over the environment */
+.region-panel{position:absolute;z-index:2;left:clamp(20px,4vw,58px);bottom:clamp(20px,5vh,52px);width:min(460px,calc(100vw - 40px));max-height:calc(100svh - 150px);overflow:auto;padding:clamp(24px,3vw,36px);border:1px solid #e9f1ff1f;background:linear-gradient(160deg,#05080fd9,#05080fb3);backdrop-filter:blur(14px);scrollbar-width:thin}
+.region-eyebrow{margin:0 0 16px;color:var(--accent);font:600 9px/1.6 var(--sans);letter-spacing:.26em}
+.region-title{margin:0;color:#f2ebda;font:400 clamp(28px,2.6vw,42px)/1.2 var(--serif);letter-spacing:.08em}
+.region-note{margin:16px 0 0;color:#e9f1ffb3;font-size:13px;line-height:1.85}
+.region-biome{margin:8px 0 0;color:#6f7a8c;font:500 9px/1.7 var(--sans);letter-spacing:.18em}
+.region-projects{margin-top:22px;display:grid;gap:12px}
+.project{padding:18px 0 4px;border-top:1px solid #e9f1ff1a}
+.project-meta{margin:0 0 8px;color:#7f8ba0;font:500 9px/1.5 var(--sans);letter-spacing:.16em}
+.project h3{margin:0;color:#f2ebda;font:400 18px/1.45 var(--serif);letter-spacing:.04em;overflow-wrap:anywhere}
+.project-text{margin:10px 0 0;color:#b7bec6;font-size:13px;line-height:1.8}
+.project-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.project-links a{padding:10px 14px;border:1px solid #e9f1ff38;color:#ece6d6;text-decoration:none;font-size:12px;transition:border-color .3s ease,color .3s ease}
+.project-links a:first-child{background:#ece6d6;border-color:#ece6d6;color:#0c111c;font-weight:700}
+.project-links a:hover,.project-links a:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+.project-links a:first-child:hover,.project-links a:first-child:focus-visible{background:var(--accent);color:#0c111c}
+.project-pending,.region-empty{color:#7f8ba0;font-size:12px;line-height:1.7;letter-spacing:.06em}
+.region-empty{margin:4px 0 0;padding-top:16px;border-top:1px solid #e9f1ff1a}
+
+/* Without WebGL: a lit disc and a palette sky stand in for the rendered worlds. */
+body.worlds-2d #worldview{background:radial-gradient(circle var(--w2d-r,200px) at var(--w2d-x,70%) var(--w2d-y,50%),var(--w2d-rock) 0,var(--w2d-sky) 98%,var(--w2d-atm) 99%,#020306 100%)}
+body.worlds-2d[data-w2d="env"] #worldview{background:linear-gradient(var(--w2d-sky),var(--w2d-hor) 60%,var(--w2d-rock))}
+
+@media (max-aspect-ratio:9/10),(max-width:560px){
+  .obs-info{left:22px;right:22px;top:max(84px,calc(env(safe-area-inset-top) + 72px));width:auto;transform:none}
+  .obs-eyebrow{margin-bottom:12px}
+  .obs-title{font-size:clamp(30px,8.5vw,44px)}
+  .obs-name{margin-top:8px;font-size:9px}
+  .obs-quote{display:none}
+  .obs-text{margin-top:10px;font-size:12px;line-height:1.75}
+  .obs-meta{display:none}
+  .obs-hint{font-size:9px;letter-spacing:.14em}
+  .node{width:56px;height:56px;margin:-28px 0 0 -28px}
+  .node-label{left:calc(50% + 22px)}.node[data-side="l"] .node-label{right:calc(50% + 22px)}
+  .world-coord{display:none}
+  .region-panel{left:12px;right:12px;bottom:12px;width:auto;max-height:52svh;padding:22px}
+  .region-title{font-size:28px}
+}
+@media (max-height:620px) and (min-aspect-ratio:9/10){
+  .obs-quote,.obs-meta{display:none}
+  .region-panel{max-height:calc(100svh - 110px)}
+}
+body[data-motion="reduced"] .node-ring{animation:none}
