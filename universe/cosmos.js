@@ -320,6 +320,338 @@ function project(p, out) {
 const pxRadius = (r, z) => r / (z * cam.tan) * H / 2;
 
 // ---------------------------------------------------------------------------
+// Continuous planets and the camera rig.
+// A continuous planet (worlds-data.js `continuous`) keeps one representation from the
+// galaxy overview down to its observation level: worlds.js registers its surface shader,
+// maps, rotation and observation state here, and this renderer draws it as a world-space
+// impostor at its real orbital position at every distance. The rig flies the camera
+// between the live overview and the observation pose, then on toward the surface for a
+// descent; the planet is never swapped for another rendering.
+//
+// A camera pose is solved, not keyframed: orientation q, lens shift s, the planet's
+// screen position P (NDC) and its apparent radius Rp (NDC height units). Blending those
+// and solving the camera position from them makes the planet grow steadily and glide to
+// its frame while the camera really travels through the system (true parallax).
+const surfaces = {};
+const rig = {planet:null, k:0, kTarget:0, dur:3.6, kd:0, kdTarget:0, ddur:3, wait:[], dwait:[], onProgress:null, haze:0, dim:0, iso:0, arc:null};
+
+function quatFromBasis(R, U, B) {
+  const [m00, m10, m20] = R, [m01, m11, m21] = U, [m02, m12, m22] = B, tr = m00 + m11 + m22;
+  let x, y, z, w, s;
+  if (tr > 0) { s = Math.sqrt(tr + 1) * 2; w = s / 4; x = (m21 - m12) / s; y = (m02 - m20) / s; z = (m10 - m01) / s; }
+  else if (m00 > m11 && m00 > m22) { s = Math.sqrt(1 + m00 - m11 - m22) * 2; w = (m21 - m12) / s; x = s / 4; y = (m01 + m10) / s; z = (m02 + m20) / s; }
+  else if (m11 > m22) { s = Math.sqrt(1 + m11 - m00 - m22) * 2; w = (m02 - m20) / s; x = (m01 + m10) / s; y = s / 4; z = (m12 + m21) / s; }
+  else { s = Math.sqrt(1 + m22 - m00 - m11) * 2; w = (m10 - m01) / s; x = (m02 + m20) / s; y = (m12 + m21) / s; z = s / 4; }
+  return [x, y, z, w];
+}
+function basisFromQuat([x, y, z, w]) {
+  return [[1 - 2*(y*y + z*z), 2*(x*y + z*w), 2*(x*z - y*w)],
+          [2*(x*y - z*w), 1 - 2*(x*x + z*z), 2*(y*z + x*w)],
+          [2*(x*z + y*w), 2*(y*z - x*w), 1 - 2*(x*x + y*y)]];
+}
+function slerp(a, b, t) {
+  let d = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+  if (d < 0) { b = b.map(c => -c); d = -d; }
+  if (d > .9995) { const r = a.map((c, i) => c + (b[i] - c) * t), l = Math.hypot(...r); return r.map(c => c / l); }
+  const th = Math.acos(d), s = Math.sin(th), wa = Math.sin((1 - t) * th) / s, wb = Math.sin(t * th) / s;
+  return a.map((c, i) => c * wa + b[i] * wb);
+}
+const smooth01 = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+
+// The pose the camera has now, framed on planet p of world radius r.
+function poseNow(p, r) {
+  const s = project(p.pos, {});
+  return {q:quatFromBasis(cam.R, cam.U, cam.F.map(c => -c)), s:[cam.sx, cam.sy], P:[s.nx, s.ny], Rp:r / (s.z * cam.tan), tan:cam.tan};
+}
+function applyPose(pose, center, r) {
+  const [R, U, B] = basisFromQuat(pose.q);
+  const z = r / (pose.Rp * pose.tan);
+  const vx = (pose.P[0] - pose.s[0]) * z * pose.tan * cam.aspect, vy = (pose.P[1] - pose.s[1]) * z * pose.tan;
+  cam.R = R; cam.U = U; cam.F = B.map(c => -c); cam.tan = pose.tan; cam.sx = pose.s[0]; cam.sy = pose.s[1];
+  cam.pos = [0, 1, 2].map(i => center[i] - (R[i] * vx + U[i] * vy - B[i] * z));
+}
+function blendPose(a, b, eRot, ePos, eZoom, via = null) {
+  // With a waypoint the orientation follows a quadratic (de Casteljau) path through it.
+  const q = via ? slerp(slerp(a.q, via, eRot), slerp(via, b.q, eRot), eRot) : slerp(a.q, b.q, eRot);
+  return {q, s:a.s.map((c, i) => lerp(c, b.s[i], ePos)), P:a.P.map((c, i) => lerp(c, b.P[i], ePos)),
+    Rp:a.Rp * Math.pow(b.Rp / a.Rp, eZoom), tan:a.tan * Math.pow(b.tan / a.tan, eZoom)};
+}
+// A large arc between two orientations goes over the planet's pole, out of the orbital
+// plane where the star and the other planets lie, instead of sweeping across them.
+function overThePole(a, b) {
+  const d = Math.abs(a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]);
+  // Decided once per journey, so the path never switches mid-flight.
+  if (rig.arc === null) rig.arc = 2 * Math.acos(Math.min(d, 1)) > 60 * DEG;
+  if (!rig.arc) return null;
+  const [Ra, Ua, Ba] = basisFromQuat(a), [Rb, Ub, Bb] = basisFromQuat(b);
+  const B = norm(Ba.map((c, i) => c + Bb[i] + (i === 1 ? 1.4 : 0)));
+  const u0 = norm(Ua.map((c, i) => c + Ub[i]));
+  const U = norm(sub(u0, B.map(c => c * dot(u0, B))));
+  return quatFromBasis(cross(U, B), U, B);
+}
+// Observation pose: the starlight reaches the planet from the direction its archive
+// page is composed for (worlds-data.js `light`, in view space), with the horizon kept
+// level; the planet sits at its responsive frame (worlds.js composition()).
+function observationPose(sf, p) {
+  const f = window.worlds.composition(p.world), L = sf.spec.light;
+  const s = norm(sub(v3(), p.pos)), up = [0, 1, 0];
+  const a2 = norm(sub(up, s.map(c => c * dot(up, s)))), a3 = cross(s, a2);
+  const b2 = norm(sub(up, L.map(c => c * L[1]))), b3 = cross(L, b2);
+  const col = j => [0, 1, 2].map(i => s[i] * L[j] + a2[i] * b2[j] + a3[i] * b3[j]);
+  const R = col(0), U = col(1), B = col(2);
+  sf.R1 = R;
+  return {q:quatFromBasis(R, U, B), s:[f.cx, f.cy], P:[f.cx, f.cy], Rp:f.R, tan:Math.tan(comp.fov * DEG / 2)};
+}
+// Toward the surface for a descent: the planet's centre (and so the region turned to
+// face the camera) at the middle of the frame, magnified sixteen times.
+function descentPose(obs) {
+  return {q:obs.q, s:[0, 0], P:[0, 0], Rp:16, tan:Math.min(obs.tan, 1 / (1.6 * 16))};
+}
+const rigRadius = p => p.radius * comp.scale * (1 + p.hover * .12);
+
+// Camera after the overview has been computed: the rig takes over from it.
+function rigCamera() {
+  const p = rig.planet;
+  if (!p || (rig.k <= 0 && rig.kd <= 0)) { rig.dim = 0; rig.iso = 0; rig.haze = 0; return; }
+  const sf = surfaces[p.world], r = rigRadius(p), k = rig.k;
+  const over = poseNow(p, r), obs = observationPose(sf, p);
+  // Acquisition, approach, reveal, arrival: one curve each for turning, gliding to the
+  // frame and growing, overlapping so the move never stops between phases. The planet
+  // grows first and becomes the anchor; only then does the camera arc round to its day
+  // side (often 90–180°, depending on where the planet is in its orbit), so the sweep
+  // of the system behind reads as orbital insertion around a large planet.
+  const grow = .6 * ease(smooth01(.03, .5, k)) + .4 * ease(smooth01(.45, 1, k));
+  let pose = blendPose(over, obs, ease(smooth01(.28, .9, k)), ease(smooth01(.08, .9, k)), grow, overThePole(over.q, obs.q));
+  if (rig.kd > 0) {
+    const kd = rig.kd;
+    pose = blendPose(pose, descentPose(obs), 1, ease(smooth01(0, .4, kd)), Math.pow(smooth01(.25, 1, kd), 2.2));
+  }
+  applyPose(pose, p.pos, r);
+  rig.dim = smooth01(.12, .85, k) * .78;
+  // Observed, the planet is alone: every other body leaves the view; only a dark field
+  // of stars stays behind it.
+  rig.iso = smooth01(.25, .85, k);
+  rig.haze = smooth01(.62, 1, rig.kd);
+}
+
+// Planet frame (local → world): spin about its own axis, axial tilt, then the viewer's
+// inspection pitch about the observation camera's right axis.
+const axisRot = (a, t) => {
+  const c = Math.cos(t), s = Math.sin(t), C = 1 - c, [x, y, z] = a;
+  return [c + x*x*C, x*y*C - z*s, x*z*C + y*s, y*x*C + z*s, c + y*y*C, y*z*C - x*s, z*x*C - y*s, z*y*C + x*s, c + z*z*C];
+};
+const m3 = (A, B) => { const C = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) C.push(A[r*3]*B[c] + A[r*3+1]*B[3+c] + A[r*3+2]*B[6+c]); return C; };
+const m3v = (M, v) => [M[0]*v[0] + M[1]*v[1] + M[2]*v[2], M[3]*v[0] + M[4]*v[1] + M[5]*v[2], M[6]*v[0] + M[7]*v[1] + M[8]*v[2]];
+const m3T = M => [M[0], M[3], M[6], M[1], M[4], M[7], M[2], M[5], M[8]];
+function planetFrame(sf, extraSpin = 0, cloudRatio = 1) {
+  const m = sf.spec.memory, rot = sf.spec.rotation;
+  const spin = (TAU * sf.clock / rot.period + m.yaw) * cloudRatio + extraSpin;
+  // rotation.open tips a ringed planet toward the observer so the ring is seen open.
+  return m3(axisRot(sf.R1 || [1, 0, 0], m.pitch + (rot.open || 0) * DEG), m3(axisRot([0, 0, 1], rot.tilt * DEG), axisRot([0, 1, 0], spin)));
+}
+const viewMatrix = () => [...cam.R, ...cam.U, ...cam.F.map(c => -c)];
+
+// Where a planet-local direction lies on screen, matching the impostor's projection
+// (orthographic on the disc), and how far it faces the viewer.
+function surfacePoint(world, local, alt = 0) {
+  const sf = surfaces[world], p = byWorld[world];
+  if (!sf || !p) return null;
+  const v = m3v(m3(viewMatrix(), planetFrame(sf)), local).map(c => c * (1 + alt));
+  const c = project(p.pos, {}), Rn = rigRadius(p) / (c.z * cam.tan);
+  const nx = c.nx + v[0] * Rn / cam.aspect, ny = c.ny + v[1] * Rn;
+  return {x:(nx * .5 + .5) * W, y:(.5 - ny * .5) * H, vx:v[0], vz:v[2]};
+}
+// Yaw and pitch that turn a region to the centre of the visible disc.
+function facing(world, local) {
+  const sf = surfaces[world], m = sf.spec.memory, rot = sf.spec.rotation;
+  const V = viewMatrix(), base = m3(V, axisRot([0, 0, 1], rot.tilt * DEG));
+  const spin0 = TAU * sf.clock / rot.period;
+  let best = null;
+  for (let i = 0; i < 720; i++) {
+    const yaw = m.yaw + (i / 720 - .5) * TAU;
+    const v = m3v(m3(base, axisRot([0, 1, 0], spin0 + yaw)), local);
+    const pitch = Math.atan2(v[1], v[2]);
+    const score = Math.abs(v[0]) + Math.abs(pitch) * .02 + Math.abs(yaw - m.yaw) * .002;
+    if (!best || score < best.score) best = {score, yaw, pitch};
+  }
+  // planetFrame adds rotation.open on top of the stored pitch.
+  return {yaw:best.yaw, pitch:Math.min(Math.max(best.pitch, -.75), .75) - (rot.open || 0) * DEG};
+}
+
+// Rig motion: k (overview → observation) and kd (observation → surface) move toward
+// their targets at their own pace; waiters resolve when a target is reached.
+function rigStep(dt) {
+  let moving = false;
+  const step = (key, target, dur, waiters) => {
+    if (rig[key] === rig[target]) return;
+    const d = dur > 0 ? dt / dur : 1;
+    rig[key] = rig[key] < rig[target] ? Math.min(rig[key] + d, rig[target]) : Math.max(rig[key] - d, rig[target]);
+    moving = true;
+    if (rig.onProgress && key === 'k') rig.onProgress(rig.k);
+    if (rig[key] === rig[target]) settle(waiters, rig[key]);
+  };
+  step('k', 'kTarget', rig.dur, rig.wait);
+  step('kd', 'kdTarget', rig.ddur, rig.dwait);
+  if (rig.planet && rig.k === 0 && rig.kTarget === 0 && rig.kd === 0) {
+    rig.planet.hoverTarget = 0; rig.planet.button?.classList.remove('is-hovered');
+    rig.planet = null; rig.arc = null;
+  }
+  return moving;
+}
+function settle(waiters, value) { waiters.splice(0).forEach(w => w.resolve({value})); }
+// Move a rig parameter and wait for it. The timer only guards against frames that never
+// come (a hidden tab), so navigation can never hang on rendering.
+function rigMove(key, target, duration, waiters) {
+  return new Promise(resolve => {
+    const entry = {resolve};
+    waiters.push(entry);
+    rig[key === 'k' ? 'kTarget' : 'kdTarget'] = target;
+    if (key === 'k') rig.dur = duration / 1000; else rig.ddur = duration / 1000;
+    if (duration <= 0 || rig[key] === target) { rig[key] = target; settle(waiters, target); }
+    setTimeout(() => { if (waiters.includes(entry)) { rig[key] = target; settle(waiters, target); } }, duration * Math.abs(target - rig[key]) + 600);
+    dirty = true;
+  });
+}
+
+// Surface resources are prepared at idle time after the opening, never on a click:
+// images decode off the main thread, each texture uploads in its own idle slot, the
+// program compiles in parallel where the GPU allows (KHR_parallel_shader_compile), and
+// one warm-up draw makes sure the driver has really finished before it is first shown.
+const MAP_UNITS = {albedo:[0, 'uAlb'], normalX:[1, 'uNx'], normalY:[2, 'uNy'], aux:[3, 'uAux'], clouds:[4, 'uCld'], ring:[5, 'uRingTex']};
+const mapUnits = maps => Object.entries(MAP_UNITS).filter(([name]) => maps[name]);
+const idle = fn => (window.requestIdleCallback ? requestIdleCallback(fn, {timeout:400}) : setTimeout(fn, 30));
+const nextIdle = () => new Promise(r => idle(r));
+let surfacesStarted = false;
+// One planet at a time, so their decodes and shader compiles never pile onto one frame;
+// a planet the visitor asks for (`first`) starts at once, ahead of the queue.
+function startSurfaces(first) {
+  if (!gl) return;
+  if (first) prepareSurface(first);
+  if (surfacesStarted) return;
+  surfacesStarted = true;
+  (async () => {
+    for (const sf of Object.values(surfaces)) { prepareSurface(sf); await sf.loading; await nextIdle(); }
+  })();
+}
+// After the opening has played (a timer, not a frame: it must not depend on the page
+// being painted).
+setTimeout(() => startSurfaces(), 4500);
+
+// Decoded off the main thread and independent of painting (img.decode() can wait for a
+// paint that a background tab never does). Data maps: no colour-space conversion.
+async function decodeImage(src) {
+  if (window.createImageBitmap) {
+    try {
+      const blob = await (await fetch(src)).blob();
+      return await createImageBitmap(blob, {colorSpaceConversion:'none', premultiplyAlpha:'none'});
+    } catch (error) { /* fall through to an <img> */ }
+  }
+  return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = src; });
+}
+function prepareSurface(sf) {
+  if (sf.loading) return;
+  const spec = sf.spec;
+  const desktop = matchMedia('(pointer: fine)').matches && Math.max(screen.width, screen.height) >= 1024;
+  const res = desktop && gl.getParameter(gl.MAX_TEXTURE_SIZE) >= 4096 ? spec.maps.hd : spec.maps.sd;
+  const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+  const deriv = !!gl.getExtension('OES_standard_derivatives');
+  const load = async name => {
+    const img = await decodeImage(spec.maps[name].replace('{res}', res));
+    await nextIdle();
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+    img.close?.();   // the decoded bitmap is no longer needed once on the GPU
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    sf.tex[name] = t;
+  };
+  const build = async withMaps => {
+    sf.maps = withMaps;
+    const prog = programAsync(SHADERS.bodyVS, spec.fragment(deriv, withMaps));
+    while (!prog.poll()) await nextIdle();
+    if (!prog.ok) throw new Error('surface program failed');
+    sf.prog = prog;
+    await nextIdle();
+    warmUp(sf);
+  };
+  // Maps first, one at a time; if any fails the planet keeps its procedural surface.
+  sf.loading = (async () => {
+    try {
+      for (const [name] of mapUnits(spec.maps)) await load(name);
+      await build(true);
+    } catch (error) {
+      console.warn(`Orbital Archive: surface maps for ${spec.world} unavailable, using the procedural surface.`, error);
+      await build(false);
+    }
+    sf.ready = true; dirty = true;
+  })();
+}
+
+// Compile and link without blocking; poll() reports completion (and blocks only on
+// GPUs without the parallel-compile extension, at an idle moment).
+let parallelCompile;   // looked up on first use: the context is created further down
+function programAsync(vs, fs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(p, s);
+  });
+  gl.linkProgram(p);
+  const locs = {}, rec = {p, ok:false, done:false,
+    u:n => (n in locs ? locs[n] : (locs[n] = gl.getUniformLocation(p, n))), a:n => gl.getAttribLocation(p, n)};
+  rec.poll = () => {
+    if (rec.done) return true;
+    if (parallelCompile === undefined) parallelCompile = gl.getExtension('KHR_parallel_shader_compile');
+    if (parallelCompile && !gl.getProgramParameter(p, parallelCompile.COMPLETION_STATUS_KHR)) return false;
+    rec.done = true; rec.ok = !!gl.getProgramParameter(p, gl.LINK_STATUS);
+    if (!rec.ok) console.warn(gl.getProgramInfoLog(p), gl.getAttachedShaders(p).map(s => gl.getShaderInfoLog(s)).join('\n'));
+    return true;
+  };
+  return rec;
+}
+// One draw into a 1×1 target with every texture bound: drivers may defer the last of
+// the compilation until first use, and that must not happen in front of the visitor.
+function warmUp(sf) {
+  const tex = gl.createTexture(), fb = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, 1, 1);
+  drawSurface(sf, byWorld[sf.spec.world], 0, 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb); gl.deleteTexture(tex);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+function drawSurface(sf, q, rt, alpha) {
+  const p = sf.prog, r = rigRadius(q), ext = sf.spec.extent || 1.45, pxScale = canvas.width / W;
+  gl.useProgram(p.p); setCamera(p);
+  const V = viewMatrix(), M = m3(V, planetFrame(sf)), C = m3(V, planetFrame(sf, 1.3, sf.spec.rotation.clouds));
+  gl.uniformMatrix3fv(p.u('uRot'), false, m3T(M));     // local → view
+  gl.uniformMatrix3fv(p.u('uInv'), false, M);          // view → local
+  gl.uniformMatrix3fv(p.u('uCloud'), false, C);        // view → cloud frame
+  const Lw = norm(sub(v3(), q.pos));
+  gl.uniform3f(p.u('uL'), dot(Lw, cam.R), dot(Lw, cam.U), -dot(Lw, cam.F));
+  gl.uniform1f(p.u('uT'), sf.clock); gl.uniform1f(p.u('uZoom'), smooth01(.3, 1, rig.kd) * (rig.planet === q ? 1 : 0)); gl.uniform1f(p.u('uHaze'), 0);
+  gl.uniform3fv(p.u('uCenter'), q.pos);
+  gl.uniform1f(p.u('uSize'), r * ext); gl.uniform1f(p.u('uExtent'), ext);
+  gl.uniform1f(p.u('uPixel'), 1 / Math.max(pxRadius(r, q.screen.z || 1) * pxScale, 1));
+  gl.uniform1f(p.u('uFade'), alpha);
+  if (sf.maps) mapUnits(sf.spec.maps).forEach(([name, [unit, sampler]]) => {
+    gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, sf.tex[name]); gl.uniform1i(p.u(sampler), unit);
+  });
+  gl.activeTexture(gl.TEXTURE0);
+  sf.spec.uniforms(gl, p);
+  const off = attribs(p, buffers.quad, [['aQ', 2]]);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); off();
+}
+
+// ---------------------------------------------------------------------------
 // Interaction wiring (hover/focus pause the planet under the pointer only)
 function setHover(world, on) {
   const p = byWorld[world];
@@ -374,6 +706,41 @@ window.cosmos = {
     });
   },
   invalidate() { dirty = true; },
+
+  // --- Continuous planets (see "Continuous planets and the camera rig" above) ---
+  // worlds.js hands over a planet's surface shader, maps, rotation and observation state.
+  registerSurface(spec) {
+    if (!byWorld[spec.world]) return;
+    surfaces[spec.world] = {spec, clock:0, tex:{}, prog:null, ready:false, fade:0, maps:false};
+    if (gl && surfacesStarted) prepareSurface(surfaces[spec.world]);
+  },
+  // True when this renderer can carry the planet all the way to its observation level.
+  canObserve(world) { return !!(gl && progs.planet && surfaces[world]); },
+  // Fly to the observation pose. Resolves {arrived:true}, or {cancelled:true} if a
+  // departure begins first. onProgress(k) runs every frame with k from 0 to 1.
+  observe(world, {instant = false, onProgress = null} = {}) {
+    const p = byWorld[world];
+    // A visitor faster than the opening (or a direct link) starts the preparation now.
+    startSurfaces(surfaces[world]);
+    if (rig.planet && rig.planet !== p) { rig.planet.hoverTarget = 0; rig.k = 0; rig.kTarget = 0; }
+    rig.planet = p; rig.onProgress = onProgress;
+    planets.forEach(q => { q.hoverTarget = q === p ? 1 : 0; });
+    if (instant) p.hover = 1;
+    return rigMove('k', 1, instant ? 0 : 3600 * (1 - rig.k), rig.wait).then(r => r.value === 1 ? {arrived:true} : {cancelled:true});
+  },
+  // The reverse journey; any approach still under way resolves as cancelled.
+  depart({instant = false, onProgress = null} = {}) {
+    if (!rig.planet) return Promise.resolve();
+    rig.onProgress = onProgress;
+    rig.kd = rig.kdTarget = 0;
+    rig.wait.splice(0).forEach(w => w.resolve({value:-1}));
+    return rigMove('k', 0, instant ? 0 : 2600 * rig.k, rig.wait);
+  },
+  descend({instant = false} = {}) { return rigMove('kd', 1, instant ? 0 : 3000, rig.dwait); },
+  ascend({instant = false} = {}) { return rigMove('kd', 0, instant ? 0 : 2200, rig.dwait); },
+  surfacePoint,
+  facing,
+  surfaceReady(world) { return !!surfaces[world]?.ready; },
   // Apparent radius (NDC height units) of a planet at the end of travel(), so the
   // planetary observation level can take over at exactly the same size.
   focusRadius() { return 1.12 / (9 * Math.tan(comp.fov * DEG / 2)); }
@@ -610,6 +977,16 @@ void main(){
   // Deeper darkness toward the frame edges: the light is a pocket in a dark space.
   col *= 1.0 - .5 * smoothstep(.55, 1.5, length((uv - vec2(.58, .5)) * vec2(1.2, 1.0)));
   gl_FragColor = vec4(col * base, 1.0);
+}`,
+
+  // Full-frame veil: quiets the system behind an observed planet (black), and closes the
+  // planet's own haze over the view on the way down to its surface (uNoise > 0).
+  veilFS: FS_PRECISION + NOISE + `
+uniform vec3 uCol; uniform float uAmt, uNoise, uRT; uniform vec2 uRes; varying vec2 vUv;
+void main(){
+  float a = uAmt * (1.0 - uNoise * .2 + uNoise * .2 * fbm3(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 2.5, uRT * .25 + uAmt * 3.0)));
+  a = clamp(a, 0.0, 1.0);
+  gl_FragColor = vec4(uCol * a, a);
 }`,
 
   copyFS: `precision mediump float; uniform sampler2D uTex; varying vec2 vUv;
@@ -1113,6 +1490,7 @@ function initGL() {
   progs.ring = program(SHADERS.ringVS, SHADERS.ringFS);
   progs.star = program(SHADERS.bodyVS, SHADERS.starFS);
   progs.planet = program(SHADERS.bodyVS, SHADERS.planetFS);
+  progs.veil = program(SHADERS.quadVS, SHADERS.veilFS);
   buildGeometry();
   fboTex = gl.createTexture();
   fbo = gl.createFramebuffer();
@@ -1209,7 +1587,7 @@ function renderGL(rt, intro) {
     // Orbit lines take the same light as the vortex: warmer close to the star.
     const tint = pl ? Math.min(Math.max((pl.a - 1.2) / 3, 0), 1) : r.tint;
     gl.uniform3fv(p.u('uCol'), pl ? COLORS.warmPale.map((c, i) => lerp(c, COLORS.pale[i], tint)) : COLORS.warm.map((c, i) => lerp(c, COLORS.cool[i], tint)));
-    gl.uniform1f(p.u('uFade'), pl ? fade(intro, 1.1, 2.8) : fade(intro, .6, 3.2));
+    gl.uniform1f(p.u('uFade'), (pl ? fade(intro, 1.1, 2.8) : fade(intro, .6, 3.2)) * (1 - rig.iso));
     gl.uniform1f(p.u('uAlpha'), r.alpha);
     gl.uniform1f(p.u('uRad'), r.a);
     gl.uniform1f(p.u('uArc'), r.arc ? 1 : 0);
@@ -1223,7 +1601,7 @@ function renderGL(rt, intro) {
 
   // The giant's own orbit: the same circle its position is taken from, sweeping out
   // of frame below and returning far behind the star.
-  const giantFade = fade(intro, 1.2, 3.8) * (1 - ease(travel.k));
+  const giantFade = fade(intro, 1.2, 3.8) * (1 - ease(travel.k)) * (1 - rig.iso);
   gl.uniform3fv(p.u('uCol'), COLORS.pale);
   gl.uniform1f(p.u('uFade'), giantFade);
   gl.uniform1f(p.u('uAlpha'), .24); gl.uniform1f(p.u('uRad'), giant.A);
@@ -1235,7 +1613,7 @@ function renderGL(rt, intro) {
 
   // The giant and the wreck, all before the star and planets so navigation always
   // stays on top: glowing dust first, then solid bodies far to near, then grit.
-  const wreckFade = fade(intro, 1, 3.6) * (1 - ease(travel.k)), az = -giantAngle();
+  const wreckFade = fade(intro, 1, 3.6) * (1 - ease(travel.k)) * (1 - rig.iso), az = -giantAngle();
   const quad = () => { off = attribs(p, buffers.quad, [['aQ', 2]]); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); off(); };
   const toView = v => [dot(v, cam.R), dot(v, cam.U), -dot(v, cam.F)];
   const points = (prog, buf, layout, count) => {
@@ -1291,37 +1669,36 @@ function renderGL(rt, intro) {
     .sort((a, b) => b.z - a.z).forEach(s => s.draw());
   points(progs.grit, buffers.grit, [['aG', 4], ['aS', 1]], wreck.gritCount);
 
+  // Arriving at a planet, the system behind it steps back into darkness.
+  if (rig.dim > 0) drawVeil([0, 0, 0], rig.dim, 0, rt);
+
   // Star and planets, far to near, so the star's disc can hide planets behind it.
   const bodies = [{star:true, z:star.z}, ...planets.map(q => ({planet:q, z:q.screen.z}))].sort((a, b) => b.z - a.z);
   bodies.forEach(b => {
-    if (b.star) {
-      p = progs.star; gl.useProgram(p.p); setCamera(p);
-      gl.uniform3f(p.u('uCenter'), 0, 0, 0);
-      gl.uniform1f(p.u('uSize'), starR * STAR.extent);
-      gl.uniform1f(p.u('uExtent'), STAR.extent);
-      gl.uniform1f(p.u('uPixel'), 1 / Math.max(pxRadius(starR, star.z) * pxScale, 1));
-      gl.uniform1f(p.u('uRT'), rt);
-      gl.uniform1f(p.u('uFade'), fade(intro, .35, 2.1));
-      setField(p);
-    } else {
-      const q = b.planet, look = q.look, r = q.radius * comp.scale * (1 + q.hover * .12);
-      p = progs.planet; gl.useProgram(p.p); setCamera(p);
-      const Lw = norm(sub(v3(), q.pos));
-      gl.uniform3f(p.u('uL'), dot(Lw, cam.R), dot(Lw, cam.U), -dot(Lw, cam.F));
-      ['c1', 'c2', 'c3', 'atm'].forEach(k => gl.uniform3fv(p.u('u' + k[0].toUpperCase() + k.slice(1)), look._rgb[k]));
-      gl.uniform1f(p.u('uSeed'), look.seed); gl.uniform1f(p.u('uFreq'), look.freq);
-      gl.uniform1f(p.u('uBands'), look.bands); gl.uniform1f(p.u('uIce'), look.ice);
-      gl.uniform1f(p.u('uClouds'), look.clouds); gl.uniform1f(p.u('uSpec'), look.spec);
-      gl.uniform1f(p.u('uSpin'), driftClock / q.spin * TAU + look.seed);
-      gl.uniform1f(p.u('uTilt'), q.tilt * DEG);
-      gl.uniform1f(p.u('uHover'), q.hover);
-      gl.uniform1f(p.u('uDim'), q.dim);
-      gl.uniform3fv(p.u('uCenter'), q.pos);
-      gl.uniform1f(p.u('uSize'), r * 1.9);
-      gl.uniform1f(p.u('uExtent'), 1.9);
-      gl.uniform1f(p.u('uPixel'), 1 / Math.max(pxRadius(r, q.screen.z) * pxScale, 1));
-      gl.uniform1f(p.u('uFade'), fade(intro, 1.5, 3));
+    const sf = b.planet && surfaces[b.planet.world];
+    // A continuous planet draws its own surface at every distance, cross-fading in once
+    // it is ready; until then the overview look stands in.
+    // Seen large (arriving from a direct link before the maps are ready), the stand-in is
+    // not shown at all: the real surface fades in from darkness instead of replacing it.
+    const q = b.planet, standIn = q ? 1 - smooth01(.06, .14, rigRadius(q) / (q.screen.z * cam.tan)) : 1;
+    const shown = q === rig.planet ? Math.max(fade(intro, 1.5, 3), rig.k) : fade(intro, 1.5, 3) * (1 - rig.iso);
+    if (q && q !== rig.planet && rig.iso >= 1) return;
+    if (sf && sf.ready) {
+      if (sf.fade < 1 && standIn > 0) drawOverviewPlanet(q, rt, intro, standIn * (q === rig.planet ? 1 : 1 - rig.iso));
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      drawSurface(sf, q, rt, sf.fade * shown);
+      return;
     }
+    if (!b.star) { if (!sf || standIn > 0) drawOverviewPlanet(q, rt, intro, (sf ? standIn : 1) * (q === rig.planet ? 1 : 1 - rig.iso)); return; }
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    p = progs.star; gl.useProgram(p.p); setCamera(p);
+    gl.uniform3f(p.u('uCenter'), 0, 0, 0);
+    gl.uniform1f(p.u('uSize'), starR * STAR.extent);
+    gl.uniform1f(p.u('uExtent'), STAR.extent);
+    gl.uniform1f(p.u('uPixel'), 1 / Math.max(pxRadius(starR, star.z) * pxScale, 1));
+    gl.uniform1f(p.u('uRT'), rt);
+    gl.uniform1f(p.u('uFade'), fade(intro, .35, 2.1) * (1 - rig.dim) * (1 - rig.iso));
+    setField(p);
     off = attribs(p, buffers.quad, [['aQ', 2]]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); off();
   });
@@ -1329,7 +1706,7 @@ function renderGL(rt, intro) {
   gl.blendFunc(gl.ONE, gl.ONE);
   p = progs.mote; gl.useProgram(p.p);
   gl.uniform1f(p.u('uRT'), rt); gl.uniform1f(p.u('uTan'), cam.tan);
-  gl.uniform1f(p.u('uPxH'), canvas.height / 2); gl.uniform1f(p.u('uFade'), fade(intro, 1, 3.5));
+  gl.uniform1f(p.u('uPxH'), canvas.height / 2); gl.uniform1f(p.u('uFade'), fade(intro, 1, 3.5) * (1 - rig.dim));
   gl.uniform2f(p.u('uShift'), cam.sx * .3, cam.sy * .3);
   gl.uniform2f(p.u('uPar'), -pointer.sx * .04, -pointer.sy * .03);
   off = attribs(p, buffers.motes, [['aM', 4], ['aS', 1]]);
@@ -1342,6 +1719,40 @@ function renderGL(rt, intro) {
     off = attribs(p, buffers.streak, [['aT', 1]]);
     gl.drawArrays(gl.LINES, 0, 2); off();
   }
+
+  // On the way down to a region, the planet's sky closes over the view.
+  if (rig.haze > 0 && rig.planet) drawVeil(surfaces[rig.planet.world].spec.hazeColor, rig.haze, 1, rt);
+}
+// The overview look of a planet: compact procedural shading, view-relative spin.
+function drawOverviewPlanet(q, rt, intro, alpha = 1) {
+  const look = q.look, r = q.radius * comp.scale * (1 + q.hover * .12), pxScale = canvas.width / W;
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  const p = progs.planet; gl.useProgram(p.p); setCamera(p);
+  const Lw = norm(sub(v3(), q.pos));
+  gl.uniform3f(p.u('uL'), dot(Lw, cam.R), dot(Lw, cam.U), -dot(Lw, cam.F));
+  ['c1', 'c2', 'c3', 'atm'].forEach(k => gl.uniform3fv(p.u('u' + k[0].toUpperCase() + k.slice(1)), look._rgb[k]));
+  gl.uniform1f(p.u('uSeed'), look.seed); gl.uniform1f(p.u('uFreq'), look.freq);
+  gl.uniform1f(p.u('uBands'), look.bands); gl.uniform1f(p.u('uIce'), look.ice);
+  gl.uniform1f(p.u('uClouds'), look.clouds); gl.uniform1f(p.u('uSpec'), look.spec);
+  gl.uniform1f(p.u('uSpin'), driftClock / q.spin * TAU + look.seed);
+  gl.uniform1f(p.u('uTilt'), q.tilt * DEG);
+  gl.uniform1f(p.u('uHover'), q === rig.planet ? 0 : q.hover);
+  gl.uniform1f(p.u('uDim'), q.dim * (q === rig.planet ? 1 : 1 - rig.dim * .7));
+  gl.uniform3fv(p.u('uCenter'), q.pos);
+  gl.uniform1f(p.u('uSize'), r * 1.9);
+  gl.uniform1f(p.u('uExtent'), 1.9);
+  gl.uniform1f(p.u('uPixel'), 1 / Math.max(pxRadius(r, q.screen.z) * pxScale, 1));
+  gl.uniform1f(p.u('uFade'), fade(intro, 1.5, 3) * alpha);
+  const off = attribs(p, buffers.quad, [['aQ', 2]]);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); off();
+}
+function drawVeil(col, amount, noise, rt) {
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  const p = progs.veil; gl.useProgram(p.p);
+  gl.uniform3fv(p.u('uCol'), col); gl.uniform1f(p.u('uAmt'), amount); gl.uniform1f(p.u('uNoise'), noise);
+  gl.uniform1f(p.u('uRT'), rt); gl.uniform2f(p.u('uRes'), canvas.width, canvas.height);
+  const off = attribs(p, buffers.quad, [['aQ', 2]]);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); off();
 }
 // Uniforms of the living field; programs that do not declare one simply ignore it.
 function setField(p) {
@@ -1430,9 +1841,19 @@ function frame(now) {
     travelling = true;
     if (t >= 1 && travel.resolve) { const r = travel.resolve; travel.resolve = null; r(); }
   }
+  if (rigStep(dt)) travelling = true;
   if (surfaceOpen() && !travelling) return;
 
-  const motionTarget = globallyPaused() || travel.planet ? 0 : 1;
+  // Continuous-planet surfaces get ready at idle once the opening has played.
+
+  const spinRate = window.worlds?.spinRate?.() ?? 1;
+  Object.values(surfaces).forEach(sf => {
+    if (!reduced) sf.clock += dt * (rig.planet && byWorld[sf.spec.world] === rig.planet ? spinRate : 1);
+    if (sf.ready && sf.fade < 1) { sf.fade = reduced ? 1 : Math.min(sf.fade + dt / .6, 1); travelling = true; }
+  });
+
+  // While the rig flies, the rest of the system keeps moving, only more slowly.
+  const motionTarget = globallyPaused() || travel.planet ? 0 : rig.planet ? .3 : 1;
   globalMotion = reduced ? 0 : approach(globalMotion, motionTarget, 2.6, dt);
   orbitalClock += dt * globalMotion;
   if (!reduced) driftClock += dt * Math.max(globalMotion, .25);
@@ -1447,14 +1868,18 @@ function frame(now) {
     p.theta += p.dir * TAU / p.period * dt * globalMotion * (1 - p.hover);
   });
 
-  if (reduced && !dirty && !travelling && !easing) return;
+  if (reduced && !dirty && !travelling && !easing && !rig.planet) return;
   dirty = false;
 
   updateField(rt);
+  planets.forEach(p => orbitPoint(p, p.theta, p.pos));
   updateCamera(intro);
+  // Each continuous planet's inspection axis follows its observation pose, so its
+  // orientation never jumps when the rig picks it up.
+  if (window.worlds?.composition) Object.values(surfaces).forEach(sf => { if (byWorld[sf.spec.world] !== rig.planet) observationPose(sf, byWorld[sf.spec.world]); });
+  rigCamera();
   const starZ = dot(sub(v3(), cam.pos), cam.F);
   planets.forEach(p => {
-    orbitPoint(p, p.theta, p.pos);
     project(p.pos, p.screen);
     p.dim = .74 + .26 * Math.min(Math.max((starZ - p.screen.z) / p.a * .5 + .5, 0), 1);
   });

@@ -24,6 +24,8 @@ window.WORLDS = {
     title:'我从环境开始，<br>寻找人与场所的关系。',
     text:'学习与创作横跨景观、生态、健康城市、翻译和公共空间。这里不是一份固定简历，而是一片会继续生长的起点。',
     kind:0,
+    // Rendered by the galaxy renderer at every distance: the camera flies to it (cosmos.js).
+    continuous:true,
     rotation:{period:300, tilt:16, clouds:1.3},
     atmosphere:{color:'#ffb27a', thickness:.07, inner:.05, terminator:'#ff7a3a', clouds:.45},
     light:[-.78, .32, .52], relief:.0035,
@@ -63,10 +65,14 @@ window.WORLDS = {
     title:'在林间，<br>寻找研究的线索。',
     text:'按硕士论文研究、课程发表与文献阅读进入项目。演示与讲稿收纳在同一项目中。',
     kind:1,
+    continuous:true,
+    // Baked maps (planet-material/ in the project root). hd/sd: albedo at 4K / 2K;
+    // normals, aux and clouds are 2K only. aux: R roughness. Same layout for BLOOM, STRATA.
+    maps:{albedo:'assets/canopy/canopy-albedo-{res}.webp?v=c6', normalX:'assets/canopy/canopy-nx-{res}.webp?v=c6', normalY:'assets/canopy/canopy-ny-{res}.webp?v=c6', aux:'assets/canopy/canopy-aux.png?v=c6', clouds:'assets/canopy/canopy-clouds-sd.webp?v=c6', hd:'hd', sd:'sd', normalScale:1},
     rotation:{period:260, tilt:21, clouds:1.18},
-    atmosphere:{color:'#9fdcc0', thickness:.095, inner:.09, terminator:'#e0b070', clouds:.55},
+    atmosphere:{color:'#8fd0c6', thickness:.065, inner:.045, terminator:'#e0b070', clouds:.4},
     light:[-.62, .38, .68], relief:.003,
-    frame:{wide:[.33, -.02, .8], tablet:[.3, -.12, .72], portrait:[0, -.32, .5]},
+    frame:{wide:[.3, -.06, 1.02], tablet:[.26, -.14, .86], portrait:[0, -.3, .6]},
     ecology:{
       geology:'湿润岩体 · 巨型根系网络 · 层叠林冠',
       atmosphere:'高湿度 · 缓慢移动的雾 · 光束 · 漂浮孢子',
@@ -105,10 +111,12 @@ window.WORLDS = {
     title:'感官经验<br>以不同形态开花。',
     text:'照片、声音、气味与身体经验，被整理成可以观看和讨论的空间提案。',
     kind:2,
+    continuous:true,
+    maps:{albedo:'assets/bloom/bloom-albedo-{res}.webp?v=b3', normalX:'assets/bloom/bloom-nx-{res}.webp?v=b3', normalY:'assets/bloom/bloom-ny-{res}.webp?v=b3', aux:'assets/bloom/bloom-aux.png?v=b3', clouds:'assets/bloom/bloom-clouds-sd.webp?v=b3', hd:'hd', sd:'sd', normalScale:1},
     rotation:{period:240, tilt:24, clouds:1.22},
-    atmosphere:{color:'#8fd2f0', thickness:.11, inner:.1, terminator:'#ffa870', clouds:.55},
+    atmosphere:{color:'#86c4ec', thickness:.075, inner:.06, terminator:'#ffa870', clouds:.42},
     light:[-.72, .3, .62], relief:.002,
-    frame:{wide:[.38, -.08, .92], tablet:[.33, -.15, .8], portrait:[.06, -.36, .56]},
+    frame:{wide:[.32, -.1, 1.08], tablet:[.28, -.16, .9], portrait:[.04, -.32, .62]},
     ecology:{
       geology:'同一洋盆 · 浅海陆架 · 构造海沟 · 抬升古岛',
       atmosphere:'湿润散射 · 海洋云系 · 海雾',
@@ -146,10 +154,12 @@ window.WORLDS = {
     title:'材料在时间中沉积，<br>留下可追溯的线索。',
     text:'朋友分享、参考案例与待整理材料，在这里分门别类保存。',
     kind:3,
-    rotation:{period:340, tilt:-27, clouds:1.08},
-    atmosphere:{color:'#a88ad0', thickness:.045, inner:.035, terminator:'#b070c0', clouds:.25},
-    light:[-.9, .28, .3], relief:.004,
-    frame:{wide:[.4, .04, .6], tablet:[.35, -.05, .58], portrait:[.04, -.3, .44]},
+    continuous:true,
+    maps:{albedo:'assets/strata/strata-albedo-{res}.webp?v=s8', normalX:'assets/strata/strata-nx-{res}.webp?v=s8', normalY:'assets/strata/strata-ny-{res}.webp?v=s8', aux:'assets/strata/strata-aux.png?v=s8', clouds:'assets/strata/strata-clouds-sd.webp?v=s8', ring:'assets/strata/strata-ring.png?v=s8', hd:'hd', sd:'sd', normalScale:1},
+    rotation:{period:340, tilt:-27, clouds:1.08, open:24},
+    atmosphere:{color:'#9c88c0', thickness:.04, inner:.03, terminator:'#b070c0', clouds:.25},
+    light:[-.78, .5, .04], relief:.004,   // side light from upper left: the terminator crosses the disc and shows relief
+    frame:{wide:[.3, -.02, .84], tablet:[.28, -.1, .7], portrait:[.02, -.3, .5]},
     ring:true,
     ecology:{
       geology:'层状沉积 · 构造断裂 · 晶体洞穴 · 矿物沙漠',

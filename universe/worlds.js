@@ -146,7 +146,7 @@ function buildObservation(w) {
     b.addEventListener('focus', () => { setHover(r.id); if (b.classList.contains('is-back')) turnTo(w, r); });
     b.addEventListener('blur', () => setHover(null));
     nodeRoot.append(b);
-    return {r, b, vis:-1, front:false, x:0, y:0};
+    return {r, b, vis:-1, front:null, x:0, y:0};
   });
   signalsText = '';
 }
@@ -200,7 +200,7 @@ function onNodeClick(r, b, e) {
 obsLayer.addEventListener('pointerdown', e => {
   if (nav.level !== 2 || nav.busy || e.target.closest('button, a')) return;
   drag = {x:e.clientX, y:e.clientY, id:e.pointerId, moved:false, t:performance.now()};
-  obsLayer.setPointerCapture?.(e.pointerId);
+  try { obsLayer.setPointerCapture?.(e.pointerId); } catch { /* dragging still works without capture */ }
 });
 obsLayer.addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.id) return;
@@ -221,11 +221,14 @@ const endDrag = e => {
 obsLayer.addEventListener('pointerup', endDrag);
 obsLayer.addEventListener('pointercancel', endDrag);
 
-function turnTo(w, r) {
-  const m = memory[w.id], f = facing(w, r), y0 = m.yaw, p0 = m.pitch;
+function turnTo(w, r, duration = 900) {
+  const m = memory[w.id], f = continuous(w) ? window.cosmos.facing(w.id, r.local) : facing(w, r), y0 = m.yaw, p0 = m.pitch;
   m.vyaw = 0;
-  tween(reduced() ? 0 : 900, k => { m.yaw = lerp(y0, f.yaw, ease(k)); m.pitch = lerp(p0, f.pitch, ease(k)); });
+  return tween(reduced() ? 0 : duration, k => { m.yaw = lerp(y0, f.yaw, ease(k)); m.pitch = lerp(p0, f.pitch, ease(k)); });
 }
+// A continuous planet stays in the galaxy renderer from overview to observation (and
+// on toward its surface); the others still hand over to this canvas.
+const continuous = w => !!(w && w.continuous && window.cosmos?.canObserve?.(w.id));
 
 // ---------------------------------------------------------------------------
 // Tweens run on the frame loop; a timer finishes them if frames stall, so
@@ -247,14 +250,19 @@ function runTweens(now) {
 
 // ---------------------------------------------------------------------------
 // Navigation state machine.
-const nav = {level:1, planet:null, region:null, busy:false, pending:null, instant:false};
+const nav = {level:1, planet:null, region:null, busy:false, pending:null, instant:false, approaching:false, descending:false};
 const same = (a, b) => a.level === b.level && (a.level < 2 || a.planet === b.planet) && (a.level < 3 || a.region === b.region);
 
 async function go(target) {
-  if (nav.busy) { nav.pending = target; return; }
+  if (nav.busy) {
+    // Going back while the camera is still on its way: turn around now rather than
+    // arriving first. Anything else waits for the current move and then runs.
+    if (nav.approaching && target.level === 1) window.cosmos.depart();
+    nav.pending = target; return;
+  }
   nav.busy = true; body.classList.add('world-busy');
   try {
-    for (let guard = 0; guard < 6 && !same(nav, target); guard++) {
+    for (let guard = 0; guard < 6 && !same(nav, target) && !nav.pending; guard++) {
       if (nav.level === 3) await ascend();
       else if (nav.level === 2 && (target.level === 1 || target.planet !== nav.planet)) await leavePlanet();
       else if (nav.level === 1) await enterPlanet(target.planet);
@@ -268,6 +276,7 @@ async function go(target) {
 }
 
 async function enterPlanet(id) {
+  if (continuous(WORLDS[id])) return approachPlanet(id);
   const w = WORLDS[id], c = composition(id), instant = nav.instant || reduced();
   folio.closeCatalogue?.();
   buildObservation(w);
@@ -291,6 +300,7 @@ async function enterPlanet(id) {
 }
 
 async function leavePlanet() {
+  if (continuous(WORLDS[nav.planet])) return departPlanet();
   const instant = nav.instant || reduced(), id = nav.planet;
   showLayer(obsLayer, false);
   const sx = view.cx, sy = view.cy, sR = view.R, gR = galaxyRadius();
@@ -307,6 +317,7 @@ async function leavePlanet() {
 async function descend(regionId) {
   const w = WORLDS[nav.planet], r = regionOf(w.id, regionId);
   if (!r) { nav.level = 2; return; }
+  if (continuous(w)) return descendFromOrbit(w, r);
   const instant = nav.instant || reduced(), m = memory[w.id], c = composition();
   memory[w.id].selected = r.id; selectedTouch = null;
   showLayer(obsLayer, false);
@@ -339,6 +350,7 @@ async function descend(regionId) {
 }
 
 async function ascend() {
+  if (continuous(WORLDS[nav.planet])) return ascendToOrbit();
   const w = WORLDS[nav.planet], instant = nav.instant || reduced(), c = composition();
   showLayer(regionLayer, false);
   await tween(instant ? (reduced() ? 250 : 0) : 1000, k => { view.envFog = ease(k); view.settle = -ease(k) * .6; });
@@ -351,6 +363,96 @@ async function ascend() {
     view.cx = lerp(0, c.cx, smooth(.3, 1, k)); view.cy = lerp(0, c.cy, smooth(.3, 1, k));
   });
   showLayer(obsLayer, true);
+  const sel = nodes.find(n => n.r.id === memory[w.id].selected);
+  nodes.forEach(n => n.b.classList.toggle('is-selected', n === sel));
+  focusSoon(sel?.b || $(obsLayer, '.world-back'));
+}
+
+// ---------------------------------------------------------------------------
+// Continuous journeys: the camera rig in cosmos.js carries the view from the galaxy to
+// the planet (and down toward its surface); this file stages the interface around it.
+// Interface stages: 1 identity, once the planet dominates · 2 description, near
+// arrival · 3 regional nodes and controls, once the camera has settled.
+function stageUI(n) {
+  [1, 2, 3].forEach(i => obsLayer.classList.toggle('stage-' + i, n >= i));
+  obsLayer.inert = n < 1;
+}
+const waitFor = fn => new Promise(resolve => {
+  const t0 = performance.now();
+  const tick = () => { const v = fn(); if (v !== null || performance.now() - t0 > 10000) resolve(v); else setTimeout(tick, 50); };
+  tick();
+});
+
+async function approachPlanet(id) {
+  const w = WORLDS[id], instant = nav.instant || reduced();
+  folio.closeCatalogue?.();
+  buildObservation(w);
+  view.planet = id; view.region = null; view.show = 'none'; view.fade = 0;
+  obsLayer.classList.add('is-staged'); stageUI(0);
+  showLayer(obsLayer, true); obsLayer.inert = true;
+  body.classList.add('is-traveling');
+  nav.approaching = true; wake();
+  const result = await window.cosmos.observe(id, {instant, onProgress:k => stageUI(k > .82 ? 2 : k > .55 ? 1 : 0)});
+  nav.approaching = false;
+  if (result.cancelled) { await departPlanet(); return; }
+  nav.level = 2; nav.planet = id; nav.region = null;
+  body.classList.add('observing'); body.classList.remove('is-traveling');
+  setGalaxyInert(true);
+  stageUI(3);
+  focusSoon($(obsLayer, '.world-back'));
+}
+
+async function departPlanet() {
+  const id = view.planet, instant = nav.instant || reduced();
+  stageUI(0); showLayer(obsLayer, false);
+  body.classList.remove('observing'); body.classList.add('is-traveling');
+  await window.cosmos.depart({instant, onProgress:k => { if (k < .35) body.classList.remove('is-traveling'); }});
+  body.classList.remove('is-traveling');
+  obsLayer.classList.remove('is-staged');
+  setGalaxyInert(false);
+  nav.level = 1; nav.planet = null; nav.region = null;
+  focusSoon(document.querySelector(`.system .planet[data-world="${id}"]`));
+}
+
+async function descendFromOrbit(w, r) {
+  const instant = nav.instant || reduced();
+  memory[w.id].selected = r.id; selectedTouch = null;
+  obsLayer.classList.add('is-descending'); showLayer(obsLayer, false);
+  nodes.forEach(n => n.b.classList.toggle('is-selected', n.r.id === r.id));
+  buildRegion(w, r);
+  nav.descending = true;
+  initGL();
+  // The region's programs compile in parallel while the camera turns and dives.
+  const env = gl ? waitFor(() => envPrograms(w, r)) : Promise.resolve();
+  await Promise.all([turnTo(w, r, 1400), window.cosmos.descend({instant})]);
+  await env;
+  obsLayer.classList.remove('is-descending');
+  // Under the planet's haze the region takes over; its first frames are that same haze.
+  setupEnv(w, r);
+  view.show = 'env'; view.region = r.id; view.envFog = 1; view.settle = 1; view.fade = 0;
+  wake();
+  await tween(instant ? 0 : 350, k => { view.fade = k; });
+  body.classList.add('surface-open');
+  nav.descending = false;
+  nav.level = 3; nav.region = r.id;
+  showLayer(regionLayer, true);
+  await tween(instant ? (reduced() ? 300 : 0) : 2000, k => { const e = ease(k); view.envFog = 1 - e; view.settle = 1 - e; });
+  focusSoon($(regionLayer, '.world-back'));
+}
+
+async function ascendToOrbit() {
+  const w = WORLDS[nav.planet], instant = nav.instant || reduced();
+  showLayer(regionLayer, false);
+  nav.descending = true;
+  await tween(instant ? (reduced() ? 250 : 0) : 1000, k => { view.envFog = ease(k); view.settle = -ease(k) * .6; });
+  body.classList.remove('surface-open');
+  window.cosmos.invalidate();
+  await tween(instant ? 0 : 350, k => { view.fade = 1 - k; });
+  view.show = 'none'; view.region = null;
+  nav.level = 2; nav.region = null;
+  await window.cosmos.ascend({instant});
+  nav.descending = false;
+  showLayer(obsLayer, true); stageUI(3);
   const sel = nodes.find(n => n.r.id === memory[w.id].selected);
   nodes.forEach(n => n.b.classList.toggle('is-selected', n === sel));
   focusSoon(sel?.b || $(obsLayer, '.world-back'));
@@ -374,11 +476,16 @@ function parse(hash) {
 const hashOf = t => t.level === 1 ? '#/' : `#/${WORLDS[t.planet].code.toLowerCase()}${t.level === 3 ? '/' + t.region : ''}`;
 function navigate(target, replace = false) {
   const hash = hashOf(target);
-  if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState']({child:!replace && target.level > 1}, '', hash);
+  // `child` marks an entry whose previous entry is its parent, so "up" can be "back".
+  // Opening one planet from another is not such a step.
+  const parent = target.level === 3 ? hashOf({level:2, planet:target.planet}) : '#/';
+  const here = location.hash || '#/';
+  if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState']({child:!replace && target.level > 1 && here === parent}, '', hash);
   go(target);
 }
 // One level up: step back through history when the parent is the previous entry.
 function up() {
+  if (nav.approaching) { window.cosmos.depart(); if (history.state?.child) history.back(); else navigate({level:1}, true); return; }
   if (nav.level === 1) return;
   const parent = nav.level === 3 ? {level:2, planet:nav.planet} : {level:1};
   if (history.state?.child) history.back(); else navigate(parent, true);
@@ -391,7 +498,10 @@ document.querySelectorAll('.system .planet[data-world]').forEach(b => {
   b.addEventListener('click', () => navigate({level:2, planet:b.dataset.world}));
 });
 
-window.worlds = {up, navigate, level:() => nav.level};
+window.worlds = {up, navigate, level:() => nav.level,
+  // For cosmos.js: a continuous planet's frame on screen, and how fast it should turn now
+  // (held while a node is hovered or the planet dragged, stopped during a descent).
+  composition, spinRate:() => nav.descending ? 0 : hoverId || drag ? .15 : 1};
 
 // ---------------------------------------------------------------------------
 // WebGL
@@ -431,7 +541,7 @@ void main(){ gl_FragColor = vec4(texture2D(uTex, vUv).rgb + (h(gl_FragCoord.xy) 
   // so the terminator reveals structure instead of a smooth gradient.
   // A planet with surface maps (worlds-data.js `maps`) compiles with MAPS: its surface is
   // read from baked equirectangular textures instead of the procedural model below.
-  planetFS: (kind, deriv, maps) => (deriv ? '#extension GL_OES_standard_derivatives : enable\n#define DERIV\n' : '') + (maps ? '#define MAPS\n' : '') + `#define KIND ${kind}\n` + FS_PRECISION + NOISE + `
+  planetFS: (kind, deriv, maps, billboard) => (deriv ? '#extension GL_OES_standard_derivatives : enable\n#define DERIV\n' : '') + (maps ? '#define MAPS\n' : '') + (maps === 'ring' ? '#define RINGMAP\n' : '') + (billboard ? '#define BILLBOARD\n' : '') + `#define KIND ${kind}\n` + FS_PRECISION + NOISE + `
 uniform vec2 uRes; uniform vec3 uC; uniform mat3 uRot, uInv, uCloud;
 uniform float uAspect, uT, uZoom, uHaze, uRing, uAtmT, uAtmIn, uCloudAmt, uBump;
 uniform vec3 uAtm, uTerm, uL, uHazeCol; uniform vec4 uReg[4];
@@ -449,11 +559,12 @@ vec3 swirl(vec3 s, vec3 c, float size, float turn){
   return c + o * cs + cross(ax, o) * sn + ax * dot(ax, o) * (1.0 - cs);
 }
 
-#if KIND == 0 && defined(MAPS)
-// ORIGIN · baked geological maps (origin-material/ in the project root rebuilds them).
+#ifdef MAPS
+// Baked planetary maps (ORIGIN: origin-material/, the others: planet-material/ in the
+// project root rebuild them).
 //   uAlb  albedo · uNx, uNy  tangent normal x (east) and y (north), square-root encoded,
-//   greyscale · uAux  R roughness, G geothermal. The geological mask and height map that
-//   drove the bake are not needed at run time. Equirectangular: u = longitude, v = latitude.
+//   greyscale · uAux  R roughness, G emission (ORIGIN: geothermal) · uCld cloud opacity
+//   (not ORIGIN). Equirectangular: u = longitude, v = latitude.
 uniform sampler2D uAlb, uNx, uNy, uAux; uniform float uNormal;
 vec2 uvOf(vec3 p){
   float u = atan(p.z, p.x) * .15915494 + .5, v = .5 - asin(clamp(p.y, -1.0, 1.0)) * .31830989;
@@ -465,17 +576,22 @@ vec2 uvOf(vec3 p){
 #endif
   return vec2(u, v);
 }
-void surface(vec3 p, out vec3 alb, out vec3 em, out float spec, out float h){
+vec2 mapSurface(vec3 p, out vec3 alb){
   vec2 uv = uvOf(p);
   alb = texture2D(uAlb, uv).rgb;
   vec2 aux = texture2D(uAux, uv).rg;
-  h = 0.0;
   // Tangent normal into planet-local space (east / north tangents, p is up).
   vec2 t = vec2(texture2D(uNx, uv).r, texture2D(uNy, uv).r) * 2.0 - 1.0, s = t * abs(t) * uNormal;
   float cl = max(length(p.xz), .02);
   vec3 e = vec3(-p.z, 0.0, p.x) / cl, nn = vec3(-p.y * p.x / cl, cl, -p.y * p.z / cl);
   gN = normalize(s.x * e + s.y * nn + sqrt(max(1.0 - dot(s, s), 0.0)) * p);
   gGloss = 1.0 - aux.r;
+  return aux;
+}
+#if KIND == 0
+void surface(vec3 p, out vec3 alb, out vec3 em, out float spec, out float h){
+  vec2 aux = mapSurface(p, alb);
+  h = 0.0;
   // Geothermal light only where the map puts it; one slow, planet-wide breath.
   // The planet is framed with its night side mostly off screen, so the glow must also
   // read faintly in daylight (the lighting keeps ~15% of emission on the day side).
@@ -488,6 +604,25 @@ float clouds(vec3 c){
   return smoothstep(.6, .8, fbm6(w * vec3(3.0, 4.0, 3.0))) * .3;
 }
 const vec3 CLOUD = vec3(.8, .68, .54);
+#else
+// CANOPY / BLOOM / STRATA: the cloud deck is a baked opacity map in its own rotating frame.
+uniform sampler2D uCld;
+void surface(vec3 p, out vec3 alb, out vec3 em, out float spec, out float h){
+  vec2 aux = mapSurface(p, alb);
+  h = 0.0;
+  em = vec3(0.0);
+  // Water and wet ground are smooth; their sheen narrows and brightens with gloss.
+  spec = mix(.012, KIND == 2 ? .075 : .045, gGloss * gGloss);
+}
+float clouds(vec3 c){ return texture2D(uCld, uvOf(c)).r; }
+#if KIND == 1
+const vec3 CLOUD = vec3(.86, .9, .87);
+#elif KIND == 2
+const vec3 CLOUD = vec3(.95, .97, 1.0);
+#else
+const vec3 CLOUD = vec3(.62, .56, .7);
+#endif
+#endif
 
 #elif KIND == 0
 // ORIGIN · an ancient terrestrial world. Sediment laid down by long circulation runs in
@@ -650,16 +785,41 @@ float clouds(vec3 c){ return smoothstep(.6, .82, fbm3(c * vec3(2.0, 5.0, 2.0))) 
 const vec3 CLOUD = vec3(.62, .56, .7);
 #endif
 
+// Ring system in the equatorial plane, radius RIN..ROUT planet radii. The profile is a
+// baked radial map (R optical depth / 2, G particle albedo, B fine-dust fraction).
+const float RIN = 1.32, ROUT = 2.02;
+#ifdef RINGMAP
+uniform sampler2D uRingTex;
+vec3 ringAt(float r){ return texture2D(uRingTex, vec2((r - RIN) / (ROUT - RIN), .5)).rgb; }
+#else
+vec3 ringAt(float r){ float x = (r - RIN) / (ROUT - RIN);
+  return vec3(smoothstep(.34, .38, x) * smoothstep(.69, .67, x) * .5 + smoothstep(.75, .77, x) * smoothstep(.93, .92, x) * .25, .75, .3); }
+#endif
+#ifdef BILLBOARD
+// Impostor mode: drawn by cosmos.js as a camera-facing quad at the planet's real position
+// in the galaxy scene, so the same surface is visible at every distance of the journey.
+varying vec2 vQ; uniform float uExtent, uPixel, uFade;
+#endif
 void main(){
+#ifdef BILLBOARD
+  vec2 q = vQ * uExtent, ndc = vec2(0.0);
+  float aaw = uPixel * 1.6, a = 0.0;
+  vec3 col = vec3(0.0);
+#else
   vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0;
   vec2 q = (ndc - uC.xy) * vec2(uAspect, 1.0) / uC.z;
+  float aaw = 3.0 / (uC.z * uRes.y);
+#endif
   float d = length(q);
   vec3 L = normalize(uL);
+#ifndef BILLBOARD
   // Deep space: black, a few stars, the parent star's glow from the light side.
   float hs = hash(vec3(floor(gl_FragCoord.xy / 2.0), 1.0));
   vec3 col = vec3(.003, .004, .009) + vec3(.03, .034, .06) * exp(-length(ndc - L.xy * 1.6) * 1.4);
   col += vec3(.8, .85, 1.0) * step(.9975, hs) * (hs - .9975) * 300.0 * (.6 + .4 * sin(uT * (1.0 + hs * 3.0) + hs * 50.0)) * (1.0 - uHaze);
+#endif
   float zS = -2.0;
+  vec3 ax = uRot[1];   // the planet's north axis in view space (the ring plane's normal)
   if (d < 1.0) {
     vec3 n = vec3(q, sqrt(1.0 - d * d));
     zS = n.z;
@@ -693,33 +853,74 @@ void main(){
 #endif
     c += em * (1.0 - day * .85);
     float cday = smoothstep(-.18, .35, ns);
-    c = mix(c, CLOUD * (cday * (max(ns, 0.0) * .9 + .45) + .01) + uTerm * exp(-pow((ns - .02) / .12, 2.0)) * .25, cl);
+    vec3 cloudCol = CLOUD;
+#if defined(MAPS) && KIND != 0
+    // Baked cloud decks have relief: thicker cloud toward the star shades this point,
+    // thinning toward the star lights its edge, so the deck reads as volume, not paint.
+    float tow = min(clouds(uCloud * normalize(n + L * .01)) * uCloudAmt, 1.0);
+    cloudCol *= clamp(.9 + (cl - tow) * .8, .72, 1.06) * (.88 + .12 * cl);
+#endif
+    c = mix(c, cloudCol * (cday * (max(ns, 0.0) * .9 + .45) + .01) + uTerm * exp(-pow((ns - .02) / .12, 2.0)) * .25, cl);
+#ifdef RINGMAP
+    // The ring's shadow on the day side: starlight to this point crosses the ring plane.
+    float lz = dot(ax, L), tr = -dot(n, ax) / (abs(lz) > 1e-3 ? lz : 1e-3);
+    float rr = length(n + L * tr);
+    vec3 rs = ringAt(clamp(rr, RIN, ROUT));
+    c *= 1.0 - (tr > 0.0 && rr > RIN && rr < ROUT ? (1.0 - exp(-rs.r * 2.0 / max(abs(lz), .05))) * .88 : 0.0);
+#endif
     // Atmosphere seen through its depth toward the limb, lit on the day side.
     float path = 1.0 - exp(-uAtmIn / max(n.z, .04));
     c = mix(c, uAtm * (smoothstep(-.25, .5, ns) * .85 + .02), path * .55);
-    col = mix(col, c, smoothstep(1.0, 1.0 - 3.0 / (uC.z * uRes.y), d));
+    c += uAtm * pow(1.0 - n.z, 3.0) * .16 * (1.0 - smoothstep(-.35, .25, ns));   // dim glow on the dark limb
+    float cover = smoothstep(1.0, 1.0 - aaw, d);
+    col = mix(col, c, cover);
+#ifdef BILLBOARD
+    a = cover;
+#endif
   }
   // Atmosphere beyond the limb: brightest on the lit side, a thin forward-scattered arc on the dark side.
   vec2 rd = q / max(d, 1e-4);
   float lit = dot(rd, normalize(L.xy + 1e-4));
   float halo = exp(-max(d - 1.0, 0.0) / uAtmT);
   col += uAtm * halo * (smoothstep(-.3, .9, lit) * (.25 + .5 * max(L.z, 0.0)) + .04) * step(1.0, d) * .9;
-  // Rings in the equatorial plane, shadowed by the planet.
-  vec3 ax = uRot[1];
+  // A faint aura of its own: the planet seems to hold a little dim light around it.
+  col += uAtm * exp(-max(d - 1.0, 0.0) / .2) * (.035 + .05 * smoothstep(.2, -.8, lit)) * step(1.0, d);
+  // Rings: opacity from optical depth along the line of sight, so they thicken toward
+  // edge-on; the lit face reflects, the unlit face glows faintly by diffuse transmission
+  // and fine dust forward-scatters when the star is behind; the planet's shadow has a
+  // soft penumbra. Composited front/back against the planet's own depth.
   if (uRing > .5 && abs(ax.z) > .02) {
     float zr = -(ax.x * q.x + ax.y * q.y) / ax.z;
     vec3 x = vec3(q, zr); float r = length(x);
-    if (r > 1.35 && r < 2.3 && (d >= 1.0 || zr > zS)) {
-      float dens = smoothstep(1.35, 1.45, r) * smoothstep(2.3, 2.12, r) * (.35 + .65 * fbm3(vec3(r * 26.0, 0.0, 1.0))) * (1.0 - .7 * smoothstep(1.78, 1.8, r) * smoothstep(1.86, 1.84, r));
+    vec3 rg = ringAt(clamp(r, RIN, ROUT));
+    if (r > RIN && r < ROUT && (d >= 1.0 || zr > zS)) {
+      vec3 e1 = normalize(cross(ax, vec3(0.0, 0.0, 1.0))), e2 = cross(ax, e1);
+      float phi = atan(dot(x, e2), dot(x, e1));
+      float tau = rg.r * 2.0 * (1.0 + .06 * sin(phi * 3.0 + r * 17.0) * sin(phi * 7.0 - r * 41.0));
+      float muV = abs(ax.z), muL = abs(dot(ax, L)) + 1e-3;
+      float o = 1.0 - exp(-tau / muV);
+      float refl = muL / (muL + muV) * (1.0 - exp(-tau * (1.0 / muL + 1.0 / muV)));
+      float trans = muL / max(abs(muV - muL), .03) * abs(exp(-tau / muV) - exp(-tau / muL));
+      float I = rg.g * (dot(ax, L) * ax.z > 0.0 ? refl : trans * .8);
+      I += rg.b * o * pow(max(-L.z, 0.0), 3.0) * 1.2;
       float s = -dot(x, L);
-      float shade = s > 0.0 && length(x + L * s) < 1.0 ? .1 : 1.0;
-      col = mix(col, vec3(.42, .37, .5) * (.2 + .8 * abs(dot(ax, L))) * shade, dens * .65);
+      I *= s > 0.0 ? smoothstep(.97, 1.05, length(x + L * s)) : 1.0;
+      col = col * (1.0 - o) + vec3(.70, .64, .66) * I * .9;
+#ifdef BILLBOARD
+      a = a + o * (1.0 - a);
+#endif
     }
   }
+#ifdef BILLBOARD
+  // Premultiplied: the disc covers what lies behind it, the halo only adds light.
+  col *= smoothstep(uExtent, uExtent * .85, d);
+  gl_FragColor = vec4(col, a) * uFade;
+#else
   // Atmospheric entry: the haze of this planet's sky closes over the view.
   float hz = uHaze * (.8 + .2 * fbm3(vec3(ndc * 2.5, uT * .25 + uHaze * 3.0)));
   col = mix(col, uHazeCol, clamp(hz, 0.0, 1.0));
   gl_FragColor = vec4(col, 1.0);
+#endif
 }`,
 };
 
@@ -1043,12 +1244,13 @@ function lazy(key, make) {
 // Surface maps (worlds-data.js `maps`) load once per planet; until all of them are
 // ready, or if any fails, the planet keeps its procedural surface.
 // Texture unit and sampler of each map the shader reads.
-const MAP_UNITS = {albedo:[0, 'uAlb'], normalX:[1, 'uNx'], normalY:[2, 'uNy'], aux:[3, 'uAux']};
+const MAP_UNITS = {albedo:[0, 'uAlb'], normalX:[1, 'uNx'], normalY:[2, 'uNy'], aux:[3, 'uAux'], clouds:[4, 'uCld'], ring:[5, 'uRingTex']};
+const mapUnits = maps => Object.entries(MAP_UNITS).filter(([name]) => maps[name]);
 function surfaceMaps(w) {
-  if (!w.maps) return null;
+  if (!w.maps || continuous(w)) return null;   // a continuous planet's maps live in cosmos.js
   if (w._maps) return w._maps.ready ? w._maps : null;
   const m = w._maps = {ready:false, tex:{}};
-  const names = Object.keys(MAP_UNITS);
+  const names = mapUnits(w.maps).map(([name]) => name);
   // 4K maps on desktops (fine pointer, large screen), 2K on phones and tablets or GPUs
   // that cannot hold 4096 textures. Decided by the device, not the window, so a narrow
   // window on a desktop still gets the sharp set.
@@ -1083,7 +1285,34 @@ const planetProgram = w => {
   const maps = !!surfaceMaps(w);
   return lazy('planet:' + w.kind + (maps ? ':maps' : ''), () => program(SHADERS.quadVS, SHADERS.planetFS(w.kind, !!gl.getExtension('OES_standard_derivatives'), maps)));
 };
-const envPrograms = (w, r) => lazy('env:' + r.id, () => ({upper:program(SHADERS.quadVS, envSource(w, r, 'upper')), main:program(SHADERS.quadVS, envSource(w, r, 'main'))}));
+// Region programs compile without blocking where the GPU allows it: envPrograms()
+// returns null while compiling, the programs once linked, false if they failed.
+let parallelCompile;
+function programAsync(vs, fs) {
+  const p = gl.createProgram();
+  [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].forEach(([type, src]) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(p, s);
+  });
+  gl.linkProgram(p);
+  const locs = {}, rec = {p, ok:false, done:false,
+    u:n => (n in locs ? locs[n] : (locs[n] = gl.getUniformLocation(p, n))), a:n => gl.getAttribLocation(p, n)};
+  rec.poll = () => {
+    if (rec.done) return true;
+    if (parallelCompile === undefined) parallelCompile = gl.getExtension('KHR_parallel_shader_compile');
+    if (parallelCompile && !gl.getProgramParameter(p, parallelCompile.COMPLETION_STATUS_KHR)) return false;
+    rec.done = true; rec.ok = !!gl.getProgramParameter(p, gl.LINK_STATUS);
+    if (!rec.ok) console.warn('Planetary worlds: could not compile a region program.', gl.getProgramInfoLog(p), gl.getAttachedShaders(p).map(s => gl.getShaderInfoLog(s)).join('\n'));
+    return true;
+  };
+  return rec;
+}
+const pendingEnv = {};
+function envPrograms(w, r) {
+  if (!gl) return false;
+  const e = pendingEnv[r.id] || (pendingEnv[r.id] = {upper:programAsync(SHADERS.quadVS, envSource(w, r, 'upper')), main:programAsync(SHADERS.quadVS, envSource(w, r, 'main'))});
+  if (!e.upper.poll() || !e.main.poll()) return null;
+  return e.upper.ok && e.main.ok ? e : false;
+}
 function attrib(p, name, buffer, size) {
   const loc = p.a(name);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(loc);
@@ -1150,7 +1379,7 @@ function drawPlanet(t) {
   gl.uniform4fv(p.u('uReg'), w._features || (w._features = KIND_FEATURES(w)));
   const maps = surfaceMaps(w);
   if (maps) {
-    Object.entries(MAP_UNITS).forEach(([name, [unit, sampler]]) => {
+    mapUnits(w.maps).forEach(([name, [unit, sampler]]) => {
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, maps.tex[name]);
       gl.uniform1i(p.u(sampler), unit);
     });
@@ -1179,7 +1408,8 @@ function setupEnv(w, r) {
 const aurora = {next:10, value:0};
 
 function drawEnv(t) {
-  const {w, s, mark, pr, prog} = envConf, c = w.rgb;
+  const {w, s, mark, pr} = envConf, c = w.rgb;
+  const prog = envConf.prog || (envConf.prog = envPrograms(w, envConf.r));
   if (!prog) { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(...c.fog, 1); gl.clear(gl.COLOR_BUFFER_BIT); return; }
   sizeTargets();
   gl.disable(gl.BLEND);
@@ -1250,14 +1480,23 @@ function wake() { if (!running) { running = true; last = performance.now(); requ
 
 function updateNodes() {
   const w = WORLDS[view.planet];
-  if (!w || view.show !== 'planet') return;
-  const M = orientation(w), a = W / H;
+  const inCosmos = w && continuous(w) && nav.level >= 2 || nav.approaching;
+  if (!w || (view.show !== 'planet' && !inCosmos)) return;
+  const M = inCosmos ? null : orientation(w), a = W / H;
   let front = 0;
   nodes.forEach(n => {
-    const v = apply(M, n.r.local).map(x => x * (1 + n.r.alt));
+    let v;
+    if (inCosmos) {
+      // The planet lives in the galaxy renderer: ask it where this region is on screen.
+      const s = window.cosmos.surfacePoint(w.id, n.r.local, n.r.alt);
+      if (!s) return;
+      n.x = s.x; n.y = s.y; v = [s.vx, 0, s.vz];
+    } else {
+      v = apply(M, n.r.local).map(x => x * (1 + n.r.alt));
+      n.x = ((view.cx + v[0] * view.R / a) * .5 + .5) * W;
+      n.y = (.5 - (view.cy + v[1] * view.R) * .5) * H;
+    }
     const vis = smooth(.04, .22, v[2]);
-    n.x = ((view.cx + v[0] * view.R / a) * .5 + .5) * W;
-    n.y = (.5 - (view.cy + v[1] * view.R) * .5) * H;
     n.b.style.transform = `translate3d(${n.x.toFixed(1)}px,${n.y.toFixed(1)}px,0)`;
     const isFront = vis > .5;
     if (isFront) front++;
@@ -1276,15 +1515,19 @@ function frame(now) {
   const dt = Math.min(Math.max((now - last) / 1000, 0), .05);
   last = now;
   runTweens(now);
-  if (view.show === 'none' && !tweens.size) { running = false; canvas.style.opacity = 0; return; }
+  // A continuous planet is drawn by cosmos.js; this loop then only keeps its nodes and
+  // inertia going, with nothing drawn on this canvas.
+  const observing = (nav.level === 2 || nav.approaching) && continuous(WORLDS[view.planet]);
+  if (view.show === 'none' && !tweens.size && !observing) { running = false; canvas.style.opacity = 0; return; }
   requestAnimationFrame(frame);
   if (document.hidden) return;
   if (!reduced()) clock += dt;
-  // The planet turns only while it is being observed.
+  // The planet turns only while it is being observed (cosmos.js keeps the clock of a
+  // continuous planet, which turns in the galaxy too).
   if (nav.level === 2 && !nav.busy && !reduced()) {
     const m = memory[view.planet];
     const hold = hoverId || drag ? .15 : 1;
-    spinClock += dt * hold;
+    if (!observing) spinClock += dt * hold;
     if (!drag) { m.yaw += m.vyaw * dt; m.vyaw *= Math.exp(-dt * 2.5); }
   }
   drift.x = lerp(drift.x, reduced() ? 0 : drift.px + Math.sin(clock * .05) * .012, 1 - Math.exp(-dt * 1.5));
@@ -1301,6 +1544,26 @@ function frame(now) {
 }
 
 addEventListener('resize', () => { if (view.show === 'planet' && nav.level === 2 && !nav.busy) Object.assign(view, composition()); });
+
+// Continuous planets: hand their surface (the same planet shader, in impostor mode),
+// maps, rotation and observation state to the galaxy renderer.
+Object.values(WORLDS).filter(w => w.continuous).forEach(w => window.cosmos?.registerSurface?.({
+  world:w.id, rotation:w.rotation, memory:memory[w.id], light:lightOf(w), maps:w.maps,
+  extent:w.ring ? 2.5 : 1.9,   // impostor size in planet radii: a ring reaches ROUT (2.02)
+  hazeColor:w.rgb.fog.map((c, i) => c * 1.1 + w.rgb.sun[i] * .08),
+  fragment:(deriv, maps) => SHADERS.planetFS(w.kind, deriv, maps && w.maps.ring ? 'ring' : maps, true),
+  uniforms(g, p) {
+    g.uniform1f(p.u('uRing'), w.ring ? 1 : 0);
+    g.uniform1f(p.u('uAtmT'), w.atmosphere.thickness); g.uniform1f(p.u('uAtmIn'), w.atmosphere.inner);
+    g.uniform1f(p.u('uCloudAmt'), w.atmosphere.clouds * 1.6); g.uniform1f(p.u('uBump'), w.relief);
+    g.uniform3fv(p.u('uAtm'), hex(w.atmosphere.color)); g.uniform3fv(p.u('uTerm'), hex(w.atmosphere.terminator));
+    g.uniform4fv(p.u('uReg'), w._features || (w._features = KIND_FEATURES(w)));
+    if (w.maps) g.uniform1f(p.u('uNormal'), w.maps.normalScale);
+  }
+}));
+// This canvas's own context (regions, other planets) is created at an idle moment,
+// never in the middle of a navigation.
+setTimeout(() => (window.requestIdleCallback || setTimeout)(() => { if (gl === null) initGL(); }), 6000);
 
 // Direct links: open the requested level without the fly-in.
 const initial = parse(location.hash);

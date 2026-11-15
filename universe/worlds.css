@@ -81,7 +81,7 @@ body.worlds-2d[data-w2d="env"] #worldview{background:linear-gradient(var(--w2d-s
   .obs-quote{display:none}
   .obs-text{margin-top:10px;font-size:12px;line-height:1.75}
   .obs-meta{display:none}
-  .obs-hint{font-size:9px;letter-spacing:.14em}
+  .obs-hint{width:calc(100% - 44px);font-size:9px;letter-spacing:.14em;line-height:1.6;white-space:normal;text-align:center}
   .node{width:56px;height:56px;margin:-28px 0 0 -28px}
   .node-label{left:calc(50% + 22px)}.node[data-side="l"] .node-label{right:calc(50% + 22px)}
   .world-coord{display:none}
@@ -93,3 +93,23 @@ body.worlds-2d[data-w2d="env"] #worldview{background:linear-gradient(var(--w2d-s
   .region-panel{max-height:calc(100svh - 110px)}
 }
 body[data-motion="reduced"] .node-ring{animation:none}
+
+/* Continuous approach (cosmos.js camera rig): the archive interface arrives with the
+   planet instead of appearing at once. Stage 1: identity, once the planet dominates.
+   Stage 2: description, near arrival. Stage 3: nodes and controls, camera settled. */
+.observation.is-staged .world-bar,.observation.is-staged .obs-eyebrow,.observation.is-staged .obs-title,.observation.is-staged .obs-name,
+.observation.is-staged .obs-quote,.observation.is-staged .obs-text,.observation.is-staged .obs-meta,.observation.is-staged .obs-nodes,.observation.is-staged .obs-hint{opacity:0;transform:translateY(10px);transition:opacity .9s ease,transform 1.3s var(--ease)}
+.observation.is-staged .obs-nodes{transform:none}
+.observation.stage-1 .world-bar,.observation.stage-1 .obs-eyebrow,.observation.stage-1 .obs-title,.observation.stage-1 .obs-name{opacity:1;transform:none}
+.observation.stage-1 .obs-title{transition-delay:.12s}.observation.stage-1 .obs-name{transition-delay:.24s}
+.observation.stage-2 .obs-quote,.observation.stage-2 .obs-text,.observation.stage-2 .obs-meta{opacity:1;transform:none}
+.observation.stage-2 .obs-text{transition-delay:.15s}.observation.stage-2 .obs-meta{transition-delay:.3s}
+.observation.stage-3 .obs-nodes,.observation.stage-3 .obs-hint{opacity:1;transform:none}
+.observation.stage-3 .obs-hint{transition-delay:.6s}
+.observation.is-staged:not(.stage-3) .obs-nodes{pointer-events:none}
+.observation.is-staged:not(.stage-3){cursor:default}
+/* The galaxy's own interface steps back during the flight and stays hidden while the
+   planet is observed; the canvas itself keeps rendering behind. */
+body.is-traveling .site-header>*{opacity:0}
+.site-header>*{transition:opacity .7s ease}
+body.observing .orbit-stage,body.observing .site-header{visibility:hidden;pointer-events:none}
