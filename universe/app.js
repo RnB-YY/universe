@@ -10,6 +10,14 @@ const artifactClose = document.getElementById('artifactClose');
 
 
 const artifacts = {
+  parkplan20261118: {
+    type: 'RESEARCH PLAN · 研究计划修订版',
+    title: '健康老龄化与邻里公园植被空间 · 2026.11.18修订版',
+    meta: '2026.11.18 · KOREAN · 11页正文＋2页参考文献',
+    description: '在原研究计划基础上，融入共同指导意见，说明环境可供性及活动实现条件。附简明韩语发言稿与完整中文对照。',
+    links: [['查看韩语研究计划', '../park-research-plan-20261118/'], ['查看中韩双语发言稿', '../park-research-plan-20261118/script.html'], ['查看PDF', '../park-research-plan-20261118/presentation.pdf']]
+  },
+
   childfriendly: {
     type: 'FRIEND’S PRESENTATION · 朋友的研究展示',
     title: '건강도시 관점에서 본 아동친화적 도시 공공공간의 생태경관 설계 전략 연구',
@@ -92,6 +100,7 @@ const taxonomy = {
  archive: {label:'资料收藏', categories:['朋友分享','参考案例','待整理资料']}
 };
 const projectIndex = [
+ {id:'parkplan20261118',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
  {id:'parkplan',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
  {id:'newstranslation',world:'academic',category:'课程发表',language:'中文',year:'2026'},
  {id:'eco',world:'academic',category:'课程发表',language:'中文',year:'2026'},
