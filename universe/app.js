@@ -24,6 +24,13 @@ const artifacts = {
     description: '以郑州为研究地区，比较植被空间的潜在活动机会、使用者感知与实际利用，讨论相关空间条件。附逐页韩语发表稿。',
     links: [['查看韩语研究计划', '../park-research-plan/'], ['查看韩语发表稿', '../park-research-plan/script.html']]
   },
+  newstranslation: {
+    type: 'COURSE PRESENTATION · 课程发表',
+    title: '新闻报道韩译中实践与分析',
+    meta: '2026 · 中文 · 25页',
+    description: '以青年地方发展与金融支持报道为例，比较韩语原文、初译与修订译文，分析标题、长句、引述和翻译取舍。',
+    links: [['查看网页演示', '../news-translation/']]
+  },
   eco: {
     type: 'ACADEMIC PRESENTATION · 学术发表',
     title: '生态翻译学',
@@ -86,6 +93,7 @@ const taxonomy = {
 };
 const projectIndex = [
  {id:'parkplan',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
+ {id:'newstranslation',world:'academic',category:'课程发表',language:'中文',year:'2026'},
  {id:'eco',world:'academic',category:'课程发表',language:'中文',year:'2026'},
  {id:'prehistoric',world:'academic',category:'课程发表',language:'韩语',year:'2026'},
  {id:'green',world:'academic',category:'文献阅读',language:'韩语',year:'2026'},
