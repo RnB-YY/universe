@@ -459,7 +459,7 @@ function surfacePoint(world, local, alt = 0) {
   const v = m3v(m3(viewMatrix(), planetFrame(sf)), local).map(c => c * (1 + alt));
   const c = project(p.pos, {}), Rn = rigRadius(p) / (c.z * cam.tan);
   const nx = c.nx + v[0] * Rn / cam.aspect, ny = c.ny + v[1] * Rn;
-  return {x:(nx * .5 + .5) * W, y:(.5 - ny * .5) * H, vx:v[0], vz:v[2]};
+  return {x:(nx * .5 + .5) * W, y:(.5 - ny * .5) * H, vx:v[0], vy:v[1], vz:v[2]};
 }
 // Yaw and pitch that turn a region to the centre of the visible disc.
 function facing(world, local) {

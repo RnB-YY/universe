@@ -135,7 +135,7 @@ function buildObservation(w) {
   nodes = w.regions.map((r, i) => {
     const b = el('button', 'node'); b.type = 'button';
     b.setAttribute('aria-label', `降落到区域：${r.heading} · ${r.name}`);
-    b.innerHTML = `<span class="node-ring" aria-hidden="true"></span><span class="node-core" aria-hidden="true"></span><span class="node-index" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>
+    b.innerHTML = `<span class="node-beam" aria-hidden="true"></span><span class="node-ring" aria-hidden="true"></span><span class="node-core" aria-hidden="true"></span><span class="node-index" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>
       <span class="node-label"><b></b><small></small></span>`;
     $(b, 'b').textContent = r.heading;
     $(b, 'small').textContent = `${String(i + 1).padStart(2, '0')} · ${r.name} · ${r.en}`;
@@ -1490,7 +1490,7 @@ function updateNodes() {
       // The planet lives in the galaxy renderer: ask it where this region is on screen.
       const s = window.cosmos.surfacePoint(w.id, n.r.local, n.r.alt);
       if (!s) return;
-      n.x = s.x; n.y = s.y; v = [s.vx, 0, s.vz];
+      n.x = s.x; n.y = s.y; v = [s.vx, s.vy || 0, s.vz];
     } else {
       v = apply(M, n.r.local).map(x => x * (1 + n.r.alt));
       n.x = ((view.cx + v[0] * view.R / a) * .5 + .5) * W;
@@ -1498,6 +1498,14 @@ function updateNodes() {
     }
     const vis = smooth(.04, .22, v[2]);
     n.b.style.transform = `translate3d(${n.x.toFixed(1)}px,${n.y.toFixed(1)}px,0)`;
+    // A short cone of light rising from the ground along the local vertical, as seen on
+    // screen; points facing the camera keep a short upward beam so they stay visible.
+    const r = Math.min(Math.hypot(v[0], v[1]), 1), k = (1 - r) * .9;
+    const ang = Math.atan2(v[0], v[1] + k) * 180 / Math.PI, len = 24 + 22 * r;
+    if (Math.abs(ang - (n.ang ?? 1e9)) > .5 || Math.abs(len - n.len) > .5) {
+      n.ang = ang; n.len = len;
+      n.b.style.setProperty('--beam-a', `${ang.toFixed(1)}deg`); n.b.style.setProperty('--beam-l', `${len.toFixed(1)}px`);
+    }
     const isFront = vis > .5;
     if (isFront) front++;
     if (Math.abs(vis - n.vis) > .01) { n.b.style.opacity = vis.toFixed(2); n.vis = vis; }

@@ -31,7 +31,12 @@
 .obs-nodes{position:absolute;inset:0;z-index:1;pointer-events:none}
 .node{position:absolute;left:0;top:0;width:44px;height:44px;margin:-22px 0 0 -22px;padding:0;border:0;border-radius:50%;background:none;color:var(--paper);cursor:pointer;pointer-events:auto;opacity:0;will-change:transform,opacity;-webkit-tap-highlight-color:transparent}
 .node.is-back{pointer-events:none}
-.node-core{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#fff8ea;box-shadow:0 0 6px var(--accent),0 0 1px #fff}
+.node-core{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#fff8ea;box-shadow:0 0 6px var(--accent),0 0 14px 3px color-mix(in srgb,var(--accent) 45%,transparent),0 0 1px #fff}
+.node-beam{position:absolute;left:50%;bottom:50%;width:22px;height:var(--beam-l,32px);margin-left:-11px;transform-origin:50% 100%;transform:rotate(var(--beam-a,0deg));pointer-events:none;mix-blend-mode:screen;animation:beam-breathe 3.6s ease-in-out infinite;transition:opacity .3s ease}
+.node-beam:before{content:"";position:absolute;inset:0;background:linear-gradient(to top,color-mix(in srgb,var(--accent) 70%,#fff) 0%,color-mix(in srgb,var(--accent) 75%,transparent) 30%,color-mix(in srgb,var(--accent) 25%,transparent) 65%,transparent 100%);clip-path:polygon(40% 100%,60% 100%,100% 0,0 0);filter:blur(1px)}
+.node-beam:after{content:"";position:absolute;left:50%;bottom:0;width:2px;height:85%;margin-left:-1px;background:linear-gradient(to top,#fffdf5,color-mix(in srgb,var(--accent) 60%,transparent) 50%,transparent);filter:blur(.3px)}
+@keyframes beam-breathe{0%,100%{opacity:.82}50%{opacity:1}}
+.node:hover .node-beam,.node:focus-visible .node-beam,.node.is-hovered .node-beam,.node.is-selected .node-beam{animation:none;opacity:1;filter:brightness(1.35)}
 .node-ring{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px;border:1px solid var(--accent);border-radius:50%;opacity:.55;animation:node-pulse 4.8s ease-in-out infinite;transition:transform .4s var(--ease),opacity .3s ease}
 .node-ring:after{content:"";position:absolute;inset:-5px;border:1px solid var(--accent);border-radius:50%;opacity:0;transition:opacity .3s ease}
 .node-index{position:absolute;left:calc(50% + 9px);top:calc(50% - 15px);color:var(--accent);font:500 8px/1 var(--sans);letter-spacing:.12em;opacity:.7;text-shadow:0 0 6px #000;pointer-events:none;transition:opacity .3s ease}
@@ -92,7 +97,7 @@ body.worlds-2d[data-w2d="env"] #worldview{background:linear-gradient(var(--w2d-s
   .obs-quote,.obs-meta{display:none}
   .region-panel{max-height:calc(100svh - 110px)}
 }
-body[data-motion="reduced"] .node-ring{animation:none}
+body[data-motion="reduced"] .node-ring,body[data-motion="reduced"] .node-beam{animation:none}
 
 /* Continuous approach (cosmos.js camera rig): the archive interface arrives with the
    planet instead of appearing at once. Stage 1: identity, once the planet dominates.
