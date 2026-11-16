@@ -29,7 +29,7 @@ const artifacts = {
     title: '新闻报道韩译中实践与分析',
     meta: '2026 · 中文 · 25页',
     description: '以青年地方发展与金融支持报道为例，比较韩语原文、初译与修订译文，分析标题、长句、引述和翻译取舍。',
-    links: [['查看网页演示', '../news-translation/']]
+    links: [['查看网页演示', '../news-translation/'], ['查看逐页发表稿', '../news-translation/script.html']]
   },
   eco: {
     type: 'ACADEMIC PRESENTATION · 学术发表',
