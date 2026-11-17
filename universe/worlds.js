@@ -50,7 +50,11 @@ const Rz = s => { const c = Math.cos(s), n = Math.sin(s); return [c, -n, 0, n, c
 const Rx = s => { const c = Math.cos(s), n = Math.sin(s); return [1, 0, 0, 0, c, -n, 0, n, c]; };
 
 // Per-planet observation memory: user yaw/pitch and the last chosen region.
-const memory = Object.fromEntries(PLANET_IDS.map(id => [id, {yaw:0, pitch:.1, vyaw:0, selected:null}]));
+const memory = Object.fromEntries(PLANET_IDS.map(id => [id, {yaw:0, pitch:.1, vyaw:0, vpitch:0, selected:null}]));
+// Pitch range as seen on screen: nearly pole to pole. A ringed planet's stored pitch is
+// offset by rotation.open (cosmos.js adds it), so its limits shift by the same amount.
+const PITCH_MAX = 1.3;
+function pitchRange(w) { const o = continuous(w) ? (w.rotation.open || 0) * DEG : 0; return [-PITCH_MAX - o, PITCH_MAX - o]; }
 let spinClock = 0;
 const spinAngle = w => TAU * spinClock / w.rotation.period + memory[w.id].yaw;
 function orientation(w, cloud = false) {
@@ -63,7 +67,7 @@ function facing(w, r) {
   let yaw = r.lon * DEG - Math.PI / 2 - TAU * spinClock / w.rotation.period;
   yaw = m.yaw + (((yaw - m.yaw) % TAU) + TAU + Math.PI) % TAU - Math.PI;
   const v = apply(mul(Rz(w.rotation.tilt * DEG), Ry(yaw + TAU * spinClock / w.rotation.period)), r.local);
-  return {yaw, pitch:clamp(Math.atan2(v[1], v[2]), -.75, .75)};
+  return {yaw, pitch:clamp(Math.atan2(v[1], v[2]), -PITCH_MAX, PITCH_MAX)};
 }
 
 // ---------------------------------------------------------------------------
@@ -199,22 +203,30 @@ function onNodeClick(r, b, e) {
 }
 obsLayer.addEventListener('pointerdown', e => {
   if (nav.level !== 2 || nav.busy || e.target.closest('button, a')) return;
-  drag = {x:e.clientX, y:e.clientY, id:e.pointerId, moved:false, t:performance.now()};
+  drag = {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, id:e.pointerId, moved:false, t:performance.now()};
+  const m = memory[view.planet]; if (m) { m.vyaw = 0; m.vpitch = 0; }
+  e.preventDefault(); getSelection()?.removeAllRanges();   // a drag never selects text
   try { obsLayer.setPointerCapture?.(e.pointerId); } catch { /* dragging still works without capture */ }
 });
 obsLayer.addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.id) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (Math.hypot(dx, dy) > 5) drag.moved = true;
-  const m = memory[view.planet], k = 3.2 / Math.max(innerHeight * view.R, 200);
-  m.yaw += dx * k; m.pitch = clamp(m.pitch + dy * k, -.75, .75);
-  const now = performance.now();
-  m.vyaw = dx * k / Math.max((now - drag.t) / 1000, .008);
+  if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 5) drag.moved = true;
+  const w = WORLDS[view.planet], m = memory[view.planet], k = 3.2 / Math.max(innerHeight * view.R, 200);
+  const [lo, hi] = pitchRange(w);
+  m.yaw += dx * k; m.pitch = clamp(m.pitch + dy * k, lo, hi);
+  // Release velocity: smoothed over the last few events, so one jittery sample does not
+  // fling or stop the planet.
+  const now = performance.now(), s = Math.max((now - drag.t) / 1000, .008), a = 1 - Math.exp(-s / .05);
+  m.vyaw = lerp(m.vyaw, dx * k / s, a); m.vpitch = lerp(m.vpitch, dy * k / s, a);
   drag.x = e.clientX; drag.y = e.clientY; drag.t = now;
 });
 const endDrag = e => {
   if (!drag || (e && e.pointerId !== drag.id)) return;
-  const moved = drag.moved; drag = moved ? {moved:true} : null;
+  const moved = drag.moved;
+  // A pause before release means no fling.
+  if (performance.now() - drag.t > 90) { const m = memory[view.planet]; if (m) { m.vyaw = 0; m.vpitch = 0; } }
+  drag = moved ? {moved:true} : null;
   if (moved) setTimeout(() => { drag = null; }, 0);
   else { selectedTouch = null; nodes.forEach(n => n.b.classList.remove('is-selected')); }
 };
@@ -223,7 +235,7 @@ obsLayer.addEventListener('pointercancel', endDrag);
 
 function turnTo(w, r, duration = 900) {
   const m = memory[w.id], f = continuous(w) ? window.cosmos.facing(w.id, r.local) : facing(w, r), y0 = m.yaw, p0 = m.pitch;
-  m.vyaw = 0;
+  m.vyaw = 0; m.vpitch = 0;
   return tween(reduced() ? 0 : duration, k => { m.yaw = lerp(y0, f.yaw, ease(k)); m.pitch = lerp(p0, f.pitch, ease(k)); });
 }
 // A continuous planet stays in the galaxy renderer from overview to observation (and
@@ -327,7 +339,7 @@ async function descend(regionId) {
   if (gl) envPrograms(w, r);   // compile now, before the camera starts moving
   // 1 · rotation stops and the region turns to face the viewer
   const f = facing(w, r), y0 = m.yaw, p0 = m.pitch, sx = view.cx, sy = view.cy, sR = view.R;
-  m.vyaw = 0;
+  m.vyaw = 0; m.vpitch = 0;
   await tween(instant ? 0 : 1300, k => {
     const e = ease(k);
     m.yaw = lerp(y0, f.yaw, e); m.pitch = lerp(p0, f.pitch, e);
@@ -1536,7 +1548,11 @@ function frame(now) {
     const m = memory[view.planet];
     const hold = hoverId || drag ? .15 : 1;
     if (!observing) spinClock += dt * hold;
-    if (!drag) { m.yaw += m.vyaw * dt; m.vyaw *= Math.exp(-dt * 2.5); }
+    if (!drag) {
+      const [lo, hi] = pitchRange(WORLDS[view.planet]), d = Math.exp(-dt * 2.5);
+      m.yaw += m.vyaw * dt; m.vyaw *= d;
+      const p = m.pitch + m.vpitch * dt; m.pitch = clamp(p, lo, hi); m.vpitch = p === m.pitch ? m.vpitch * d : 0;
+    }
   }
   drift.x = lerp(drift.x, reduced() ? 0 : drift.px + Math.sin(clock * .05) * .012, 1 - Math.exp(-dt * 1.5));
   drift.y = lerp(drift.y, reduced() ? 0 : drift.py, 1 - Math.exp(-dt * 1.5));
@@ -1557,7 +1573,7 @@ addEventListener('resize', () => { if (view.show === 'planet' && nav.level === 2
 // maps, rotation and observation state to the galaxy renderer.
 Object.values(WORLDS).filter(w => w.continuous).forEach(w => window.cosmos?.registerSurface?.({
   world:w.id, rotation:w.rotation, memory:memory[w.id], light:lightOf(w), maps:w.maps,
-  extent:w.ring ? 2.5 : 1.9,   // impostor size in planet radii: a ring reaches ROUT (2.02)
+  extent:w.ring ? 2.12 : 1.9,   // impostor size in planet radii: a ring reaches ROUT (2.02)
   hazeColor:w.rgb.fog.map((c, i) => c * 1.1 + w.rgb.sun[i] * .08),
   fragment:(deriv, maps) => SHADERS.planetFS(w.kind, deriv, maps && w.maps.ring ? 'ring' : maps, true),
   uniforms(g, p) {

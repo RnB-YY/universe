@@ -475,7 +475,7 @@ function facing(world, local) {
     if (!best || score < best.score) best = {score, yaw, pitch};
   }
   // planetFrame adds rotation.open on top of the stored pitch.
-  return {yaw:best.yaw, pitch:Math.min(Math.max(best.pitch, -.75), .75) - (rot.open || 0) * DEG};
+  return {yaw:best.yaw, pitch:Math.min(Math.max(best.pitch, -1.3), 1.3) - (rot.open || 0) * DEG};
 }
 
 // Rig motion: k (overview → observation) and kd (observation → surface) move toward
