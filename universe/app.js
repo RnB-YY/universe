@@ -10,6 +10,14 @@ const artifactClose = document.getElementById('artifactClose');
 
 
 const artifacts = {
+  jia2025: {
+    type: 'PAPER REVIEW · 论文研读',
+    title: '公园距离、居住条件与老年人健康 · Jia（2025）研读',
+    meta: '2026 · KOREAN · 24页正文＋2页补充资料',
+    description: '研读山东省公园距离、住房特征与老年人自评健康的关系。含灰绿简约演示、简明中韩双语发表稿及PDF。',
+    links: [['查看韩语研读演示', '../jia-2025-park-health/'], ['查看简明中韩发表稿', '../jia-2025-park-health/script.html'], ['查看PDF', '../jia-2025-park-health/presentation.pdf']]
+  },
+
   parkplan20261118: {
     type: 'RESEARCH PLAN · 研究计划修订版',
     title: '健康老龄化与邻里公园植被空间 · 2026.11.18修订版',
@@ -100,6 +108,7 @@ const taxonomy = {
  archive: {label:'资料收藏', categories:['朋友分享','参考案例','待整理资料']}
 };
 const projectIndex = [
+ {id:'jia2025',world:'academic',category:'文献阅读',language:'韩语',year:'2026'},
  {id:'parkplan20261118',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
  {id:'parkplan',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
  {id:'newstranslation',world:'academic',category:'课程发表',language:'中文',year:'2026'},
