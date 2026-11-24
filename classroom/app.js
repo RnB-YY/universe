@@ -1,9 +1,12 @@
 import { SpeechSegments, readCaptionEvents } from './captions.js';
+import { SOURCE_MODES, sourceMode } from './languages.js';
 const $ = id => document.getElementById(id);
 const state = { rows: [], token: '', running: false, starting: false, stopping: false, draining: false, testing: false, queue: [], elapsed: 0, busy: false };
 let audio, stream, source, processor, silent, tick, segments, playbackURL;
 const storageKey = 'classroom-notes-v1';
-function save() { try { localStorage.setItem(storageKey, JSON.stringify({ rows: state.rows, course: $('course').value, terms: $('terms').value, elapsed: state.elapsed })); } catch { notice('浏览器无法暂存笔记，请在离开前导出。'); } }
+$('source-language').replaceChildren(...SOURCE_MODES.map(mode=>new Option(mode.label,mode.value)));
+function languageHint(){const mode=$('source-language').value;let text=mode==='ko-en'?'按韩语和英语混合授课理解，两种语言均译成中文。':mode==='auto'?'自动判断输入语言，译成简体中文。':`按${sourceMode(mode).label}课堂理解，译成简体中文。`;if(state.provider==='deepseek')text+=' 当前 DeepSeek 语音识别仍自动检测；此选择用于翻译提示，不能强制锁定识别语言。';else if(state.provider==='openai')text+=mode==='auto'?'':mode==='ko-en'?' 识别使用韩英混合提示，未锁定单一语言。':' 识别也会使用所选语言。';else text+=' 语音识别能否指定语言，连接后显示。';$('language-hint').textContent=text;}
+function save() { try { localStorage.setItem(storageKey, JSON.stringify({ rows: state.rows, course: $('course').value, terms: $('terms').value, sourceMode:$('source-language').value, elapsed: state.elapsed })); } catch { notice('浏览器无法暂存笔记，请在离开前导出。'); } }
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
 function clock(seconds) { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 function status(value) { $('status').textContent = value; }
@@ -17,12 +20,12 @@ function render() {
     const el = document.createElement('article'); el.className = `entry${row.error ? ' failed' : ''}`;
     const meta = document.createElement('div'); meta.className = 'entry-meta';
     const time = document.createElement('span'); time.textContent = clock(row.time);
-    const tag = document.createElement('span'); tag.textContent = row.demo ? '示例 · 非课堂录音' : '原文 / 中文'; meta.append(time, tag);
-    const ko = document.createElement('p'); ko.className = 'source'; ko.lang = row.demo ? (row.language || 'ko') : 'und'; ko.textContent = row.source;
+    const tag = document.createElement('span'); tag.textContent = row.demo ? '示例 · 非课堂录音' : row.sourceMode&&row.sourceMode!=='auto'?`预设：${sourceMode(row.sourceMode)?.label||'自动检测'} / 中文`:'原文 / 中文'; meta.append(time, tag);
+    const ko = document.createElement('p'); ko.className = 'source'; ko.lang = row.demo ? (row.language || 'ko') : (sourceMode(row.sourceMode)?.language||'und'); ko.textContent = row.source;
     const zh = document.createElement('p'); zh.className = 'translation'; zh.textContent = row.translation || row.error || '正在翻译…';
     el.append(meta, ko, zh);
     if(row.metrics){const timing=document.createElement('div');timing.className='entry-diagnostics';const m=row.metrics;timing.textContent=`采集 ${m.audioSeconds.toFixed(1)} 秒 · 排队 ${(m.queueMs/1000).toFixed(1)} 秒 · 识别 ${(m.asrMs/1000).toFixed(1)} 秒${m.translationMs!=null?` · 翻译 ${(m.translationMs/1000).toFixed(1)} 秒`:''}`;el.append(timing);}
-    if (row.error && !row.demo) { const retry = document.createElement('button'); retry.className = 'retry'; retry.textContent = '重试此句翻译'; retry.onclick = async () => { retry.disabled = true; try { const result = await api('/api/translate', { text: row.source, terms: $('terms').value }); row.translation = result.translation; delete row.error; save(); } catch(e) { notice(e.message); } finally { render(); } }; el.append(retry); }
+    if (row.error && !row.demo) { const retry = document.createElement('button'); retry.className = 'retry'; retry.textContent = '重试此句翻译'; retry.onclick = async () => { retry.disabled = true; try { const result = await api('/api/translate', { text: row.source, terms: $('terms').value, sourceMode:row.sourceMode||'auto' }); row.translation = result.translation; delete row.error; save(); } catch(e) { notice(e.message); } finally { render(); } }; el.append(retry); }
     list.append(el);
   }
   $('count').textContent = `${state.rows.length} 条笔记`;
@@ -49,7 +52,7 @@ async function connect() {
   const response = await fetch(`${base()}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('access').value }), signal: AbortSignal.timeout(12000) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || '服务未连接，请检查服务地址和访问码。');
-  state.token = result.token; $('connection').textContent = '已连接';
+  state.token = result.token;state.provider=result.transcribeProvider;languageHint(); $('connection').textContent = '已连接';
   try { localStorage.setItem('classroom-endpoint', $('endpoint').value); } catch {}
   return result;
 }
@@ -84,10 +87,10 @@ function wav(frames, sampleCount, rate) {
   let offset = 44; for (const frame of frames) for (const x of frame) { view.setInt16(offset, Math.round(Math.max(-1,Math.min(1,x))*32767), true); offset += 2; }
   return data;
 }
-function queueChunk(chunk){if(!chunk)return;state.queue.push({wav:wav(chunk.frames,chunk.samples,audio.sampleRate),time:Math.max(0,state.elapsed-chunk.samples/audio.sampleRate),audioSeconds:chunk.samples/audio.sampleRate,overlap:chunk.overlap,queuedAt:performance.now()});void drain();}
+function queueChunk(chunk){if(!chunk)return;state.queue.push({wav:wav(chunk.frames,chunk.samples,audio.sampleRate),time:Math.max(0,state.elapsed-chunk.samples/audio.sampleRate),audioSeconds:chunk.samples/audio.sampleRate,overlap:chunk.overlap,sourceMode:$('source-language').value,queuedAt:performance.now()});void drain();}
 function flush() { queueChunk(segments?.flush()); }
 async function processChunk(chunk,onEvent){
-  let response;try{response=await fetch(`${base()}/api/chunk`,{method:'POST',headers:{Authorization:`Bearer ${state.token}`,'Content-Type':'audio/wav',Accept:'application/x-ndjson','X-Classroom-Terms':encodeURIComponent($('terms').value.slice(0,2000)),'X-Classroom-Overlap':chunk.overlap?'1':'0'},body:chunk.wav,signal:AbortSignal.timeout(65000)});}catch{throw new Error('连接中断或超时，请检查网络。音频不会自动重传。');}
+  let response;try{response=await fetch(`${base()}/api/chunk`,{method:'POST',headers:{Authorization:`Bearer ${state.token}`,'Content-Type':'audio/wav',Accept:'application/x-ndjson','X-Classroom-Terms':encodeURIComponent($('terms').value.slice(0,2000)),'X-Classroom-Overlap':chunk.overlap?'1':'0','X-Classroom-Language':chunk.sourceMode||'auto'},body:chunk.wav,signal:AbortSignal.timeout(65000)});}catch{throw new Error('连接中断或超时，请检查网络。音频不会自动重传。');}
   if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`服务错误（${response.status}）`);}
   await readCaptionEvents(response,onEvent);
 }
@@ -98,7 +101,7 @@ async function drain() {
     const chunk = state.queue.shift();const queueMs=performance.now()-chunk.queuedAt;let row;status(`正在识别 · 等待 ${state.queue.length} 段`);
     try {
       await processChunk(chunk,event=>{
-        if(event.type==='source'){row={source:event.source,translation:'',time:chunk.time,metrics:{audioSeconds:chunk.audioSeconds,queueMs,asrMs:event.asrMs}};state.rows.push(row);status('原文已显示，正在翻译');}
+        if(event.type==='source'){row={source:event.source,sourceMode:event.sourceMode||chunk.sourceMode||'auto',translation:'',time:chunk.time,metrics:{audioSeconds:chunk.audioSeconds,queueMs,asrMs:event.asrMs}};state.rows.push(row);status('原文已显示，正在翻译');}
         if(event.type==='translation'&&row){row.translation=event.translation;row.metrics.translationMs=event.translationMs;}
         if(event.type==='translation-error'&&row)row.error=event.error;
         save();render();
@@ -132,7 +135,7 @@ async function start() {
     source = audio.createMediaStreamSource(stream); processor = new AudioWorkletNode(audio,'classroom-pcm'); silent = audio.createGain(); silent.gain.value = 0;
     processor.port.onmessage = event => onPCM(event.data);
     source.connect(processor); processor.connect(silent); silent.connect(audio.destination);
-    state.running = true; $('terms').disabled = true; $('demo').disabled=true; $('microphone').disabled=true;$('noise').disabled=true;$('segment-mode').disabled=true;$('mic-check').disabled=true; $('stop').disabled = false; $('start').textContent = '继续听课'; $('capture-label').textContent = '正在收音'; status('正在听课');
+    state.running = true; $('source-language').disabled=true; $('terms').disabled = true; $('demo').disabled=true; $('microphone').disabled=true;$('noise').disabled=true;$('segment-mode').disabled=true;$('mic-check').disabled=true; $('stop').disabled = false; $('start').textContent = '继续听课'; $('capture-label').textContent = '正在收音'; status('正在听课');
     stream.getAudioTracks()[0].onended = ()=>{if(state.running){notice('麦克风已断开，已暂停收音。请检查设备后继续。');void stop();}};
     tick = setInterval(()=>{state.elapsed++; $('timer').textContent=clock(state.elapsed); if(state.elapsed % 10 === 0) save(); if(state.elapsed>=7200){notice('本课已达两小时，已暂停。请导出后清空本课，再开始下一堂课。');void stop();}},1000);
   } catch(e) { stream?.getTracks().forEach(t=>t.stop()); if (audio?.state !== 'closed') await audio?.close(); status('未开始'); $('settings').open = true; notice(e.name === 'NotAllowedError' ? '没有获得麦克风权限，请在浏览器设置中允许后重试。' : (e.message || '连接失败，请检查翻译服务。')); $('start').disabled = false; }
@@ -143,7 +146,7 @@ async function stop(sendLast = true) {
   state.running = false;state.stopping=true;clearInterval(tick); $('stop').disabled = true; state.draining = true;
   if (sendLast) flush(); else segments?.reset();
   processor?.disconnect(); source?.disconnect(); silent?.disconnect(); stream?.getTracks().forEach(t=>t.stop()); if(audio?.state!=='closed') await audio?.close();
-  state.stopping=false;$('level').style.height='3px'; $('capture-label').textContent='麦克风已关闭'; $('terms').disabled=false;$('demo').disabled=false;$('microphone').disabled=false;$('noise').disabled=false;$('segment-mode').disabled=false;$('mic-check').disabled=false;save();
+  state.stopping=false;$('level').style.height='3px'; $('capture-label').textContent='麦克风已关闭'; $('source-language').disabled=false;$('terms').disabled=false;$('demo').disabled=false;$('microphone').disabled=false;$('noise').disabled=false;$('segment-mode').disabled=false;$('mic-check').disabled=false;save();
   if (!state.busy) { state.draining=false; $('start').disabled=false; status('已暂停'); }
 }
 $('start').onclick = start; $('stop').onclick = ()=>stop();
@@ -156,8 +159,9 @@ $('font').onclick=()=>{document.body.classList.toggle('large');$('font').textCon
 $('focus').onclick=()=>{document.body.classList.toggle('focus');$('focus').textContent=document.body.classList.contains('focus')?'退出专注':'专注';window.scrollTo({top:0,behavior:'instant'});};
 $('clear').onclick=()=>{if(state.running||state.starting||state.busy||state.draining||state.testing){notice('请先暂停，并等待已有片段处理完成。');return;}if(state.rows.length&&!confirm('清空这堂课的本地笔记？需要保留时，请先导出。'))return;state.rows=[];state.elapsed=0;state.token='';$('connection').textContent='未连接';$('timer').textContent='00:00';notice();status('准备就绪');save();render();};
 $('export').onclick=()=>{if(!state.rows.length){notice('还没有可以导出的笔记。');return;}const title=$('course').value.trim()||'课堂双语笔记';const text=`# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n${state.rows.some(r=>r.demo)?'\n注意：包含预设字幕示例。\n':''}\n${state.rows.map(r=>`[${clock(r.time)}]${r.demo?'（示例）':''}\n原文：${r.source}\n中文：${r.translation||r.error||'待翻译'}\n`).join('\n')}\n---\n自动识别与翻译，请结合课堂原意核对。\n`;const url=URL.createObjectURL(new Blob(['\uFEFF',text],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`${title.replace(/[<>:"/\\|?*]/g,'_')}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('source-language').addEventListener('change',()=>{languageHint();save();});
 for(const id of ['course','terms']) $(id).addEventListener('change',save);
-for(const id of ['endpoint','access']) $(id).addEventListener('change',()=>{state.token='';$('connection').textContent='未连接';});
+for(const id of ['endpoint','access']) $(id).addEventListener('change',()=>{state.token='';delete state.provider;languageHint();$('connection').textContent='未连接';});
 window.addEventListener('beforeunload',event=>{if(state.running||state.busy){event.preventDefault();event.returnValue='';}});
-try {const cached=JSON.parse(localStorage.getItem(storageKey)||'null');if(cached){state.rows=Array.isArray(cached.rows)?cached.rows.slice(-2000):[];for(const row of state.rows)if(!row.demo&&!row.translation&&!row.error)row.error='上次翻译未完成，请重试此句。';state.elapsed=Number(cached.elapsed)||0;$('course').value=cached.course||'';$('terms').value=cached.terms||'';$('timer').textContent=clock(state.elapsed);}$('endpoint').value=localStorage.getItem('classroom-endpoint')||'';}catch{}
-render();
+try {const cached=JSON.parse(localStorage.getItem(storageKey)||'null');if(cached){state.rows=Array.isArray(cached.rows)?cached.rows.slice(-2000):[];for(const row of state.rows)if(!row.demo&&!row.translation&&!row.error)row.error='上次翻译未完成，请重试此句。';state.elapsed=Number(cached.elapsed)||0;$('course').value=cached.course||'';$('terms').value=cached.terms||'';if(sourceMode(cached.sourceMode))$('source-language').value=cached.sourceMode;$('timer').textContent=clock(state.elapsed);}$('endpoint').value=localStorage.getItem('classroom-endpoint')||'';}catch{}
+languageHint();render();

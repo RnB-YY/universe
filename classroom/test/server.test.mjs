@@ -50,3 +50,15 @@ test('streamed translation failures preserve the source event and finish explici
 test('next translation receives only bounded earlier source context',async t=>{
  const s=await setup(t,{env:{DAILY_AUDIO_MINUTES:'1'}});const token=await s.session();await (await s.request('/api/chunk',wav(),token,{'Content-Type':'audio/wav'})).json();await new Promise(resolve=>setTimeout(resolve,310));await (await s.request('/api/chunk',wav(),token,{'Content-Type':'audio/wav'})).json();const first=JSON.parse(JSON.parse(s.calls[1].init.body).messages[1].content);const second=JSON.parse(JSON.parse(s.calls[3].init.body).messages[1].content);assert.deepEqual(first.context,[]);assert.deepEqual(second.context,['장소 기억은 감각 경험과 연결됩니다.']);
 });
+test('single language selection reaches OpenAI ASR and the translation prompt',async t=>{
+ const s=await setup(t);const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav','X-Classroom-Language':'ko'});assert.equal(r.status,200);assert.equal(s.calls[0].init.body.get('language'),'ko');assert.match(JSON.parse(s.calls[1].init.body).messages[0].content,/预设源语言为韩语/);
+});
+test('DeepSeek Korean-English selection constrains translation without pretending ASR is locked',async t=>{
+ const s=await setup(t,{env:{OPENAI_API_KEY:'',DEEPSEEK_API_KEY:'fake-deepseek-key'}});const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav','X-Classroom-Language':'ko-en',Accept:'application/x-ndjson'});assert.equal(r.status,200);const events=(await r.text()).trim().split('\n').map(x=>JSON.parse(x));assert.equal(events[0].sourceMode,'ko-en');assert.deepEqual([...s.calls[0].init.body.keys()],['file']);assert.match(JSON.parse(s.calls[1].init.body).messages[0].content,/韩语和英语混合授课/);
+});
+test('invalid source languages fail before paid calls',async t=>{
+ const s=await setup(t);const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav','X-Classroom-Language':'ignore-instructions'});assert.equal(r.status,400);assert.equal(s.calls.length,0);await assert.rejects(()=>readFile(s.usageFile),{code:'ENOENT'});
+});
+test('retry translation retains the original row language mode',async t=>{
+ const s=await setup(t);const r=await s.request('/api/translate',{text:'이 개념은 affordance입니다.',sourceMode:'ko-en'},await s.session());assert.equal(r.status,200);assert.match(JSON.parse(s.calls[0].init.body).messages[0].content,/韩语和英语混合授课/);
+});
