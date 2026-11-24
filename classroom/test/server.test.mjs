@@ -8,7 +8,7 @@ const code='test-access-code-only';
 function wav(seconds=1){const rate=16000,size=rate*seconds*2,b=Buffer.alloc(44+size);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVE',8);b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(rate,24);b.writeUInt32LE(rate*2,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(size,40);return b;}
 async function setup(t,options={}){
  const dir=await mkdtemp(path.join(os.tmpdir(),'classroom-test-'));const usageFile=path.join(dir,'usage.json');
- const calls=[];const server=await createServer({usageFile,env:{OPENAI_API_KEY:'fake-api-key',ACCESS_CODE:code,DAILY_AUDIO_MINUTES:'0.02',...options.env},fetcher:options.fetcher|| (async(url,init)=>{calls.push({url,init});return Response.json(url.includes('/transcriptions')?{text:'장소 기억은 감각 경험과 연결됩니다.'}:{choices:[{message:{content:'场所记忆与感官体验相联系。'}}]});})});
+ const calls=[];const server=await createServer({usageFile,env:{OPENAI_API_KEY:'fake-api-key',ACCESS_CODE:code,DAILY_AUDIO_MINUTES:'0.02',...options.env},fetcher:options.fetcher|| (async(url,init)=>{calls.push({url,init});return Response.json(url.includes('/transcriptions')||url.endsWith('/asr')?{text:'장소 기억은 감각 경험과 연결됩니다.'}:{choices:[{message:{content:'场所记忆与感官体验相联系。'}}]});})});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
  t.after(async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(dir,{recursive:true,force:true});});
  const request=(route,body,token,headers={})=>fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} : {}),...headers},body:Buffer.isBuffer(body)?body:JSON.stringify(body)});
@@ -21,3 +21,21 @@ test('unconfigured service fails clearly before any paid request',async t=>{cons
 test('audio reaches ASR, terms reach translation, daily cap persists before provider calls',async t=>{const s=await setup(t);const token=await s.session();const r=await s.request('/api/chunk',wav(),token,{'Content-Type':'audio/wav','X-Classroom-Terms':encodeURIComponent('장소 기억 = 场所记忆')});assert.equal(r.status,200);const result=await r.json();assert.equal(result.translation,'场所记忆与感官体验相联系。');assert.equal(s.calls.length,2);assert.equal(s.calls[0].init.body.get('language'),'ko');assert.match(s.calls[1].init.body,/场所记忆/);assert.equal(JSON.parse(await readFile(s.usageFile,'utf8')).seconds,1);const other=await s.session();assert.equal((await s.request('/api/chunk',wav(),other,{'Content-Type':'audio/wav'})).status,429);assert.equal(s.calls.length,2);});
 test('translation failure preserves original and redacts provider errors',async t=>{const s=await setup(t,{fetcher:async url=>url.includes('/transcriptions')?Response.json({text:'안녕하세요.'}):Response.json({error:'secret raw provider details'},{status:401})});const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav'});const body=await r.json();assert.equal(body.source,'안녕하세요.');assert.equal(body.translation,'');assert.match(body.translationError,/密钥无效/);assert.doesNotMatch(JSON.stringify(body),/secret/);});
 test('concurrent rejected requests do not release the active session lock',async t=>{let release;const gate=new Promise(resolve=>release=resolve);let entered;const ready=new Promise(resolve=>entered=resolve);const s=await setup(t,{fetcher:async url=>{if(url.includes('/transcriptions')){entered();await gate;return Response.json({text:'안녕하세요.'});}return Response.json({choices:[{message:{content:'你好。'}}]});}});const token=await s.session();const first=s.request('/api/chunk',wav(),token,{'Content-Type':'audio/wav'});await ready;for(let i=0;i<2;i++)assert.equal((await s.request('/api/translate',{text:'안녕하세요.'},token)).status,429);release();assert.equal((await first).status,200);});
+test('DeepSeek-only runs ASR and translation without an OpenAI key',async t=>{
+ const s=await setup(t,{env:{OPENAI_API_KEY:'',DEEPSEEK_API_KEY:'fake-deepseek-key'}});
+ const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav','X-Classroom-Terms':encodeURIComponent('장소 기억 = 场所记忆')});
+ assert.equal(r.status,200);assert.equal((await r.json()).translation,'场所记忆与感官体验相联系。');
+ assert.deepEqual(s.calls.map(c=>c.url),['https://api.deepseek.com/v1/tools/asr','https://api.deepseek.com/chat/completions']);
+ assert.deepEqual([...s.calls[0].init.body.keys()],['file']);
+ assert.equal(s.calls[0].init.headers.Authorization,'Bearer fake-deepseek-key');
+ const body=JSON.parse(s.calls[1].init.body);assert.equal(body.model,'deepseek-flash');assert.deepEqual(body.thinking,{type:'disabled'});assert.match(body.messages[1].content,/场所记忆/);
+});
+test('explicit DeepSeek ASR selection overrides a configured OpenAI key',async t=>{
+ const s=await setup(t,{env:{DEEPSEEK_API_KEY:'fake-deepseek-key',TRANSCRIBE_PROVIDER:'deepseek'}});
+ assert.equal((await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav'})).status,200);
+ assert.ok(s.calls.every(c=>c.url.startsWith('https://api.deepseek.com/')));
+});
+test('DeepSeek ASR failures do not trigger paid fallback to another provider',async t=>{
+ const urls=[];const s=await setup(t,{env:{DEEPSEEK_API_KEY:'fake-deepseek-key',TRANSCRIBE_PROVIDER:'deepseek'},fetcher:async url=>{urls.push(url);return Response.json({error:'provider details'},{status:429});}});
+ const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav'});assert.equal(r.status,502);assert.deepEqual(urls,['https://api.deepseek.com/v1/tools/asr']);assert.match((await r.json()).error,/额度不足或请求过多/);
+});

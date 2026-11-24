@@ -12,7 +12,7 @@
 <label for="terms">课程术语 <span>每行一组，最多 2,000 字</span></label><textarea id="terms" rows="5" maxlength="2000" placeholder="장소 기억 = 场所记忆&#10;감각 경험 = 感官体验&#10;건강한 노화 = 健康老龄化"></textarea>
 <p class="hint">识别和翻译会参考术语，仍可能出现误听或误译。</p>
 <details id="settings"><summary>连接设置 <span id="connection">未连接</span></summary><label for="endpoint">翻译服务地址</label><input id="endpoint" type="url" placeholder="https://你的翻译服务"><label for="access">访问码</label><input id="access" type="password" autocomplete="off" placeholder="由服务所有者设置"><button id="connect" class="secondary">检查连接</button><p class="hint">这里只填写服务地址和访问码。API 密钥由后端保管。</p></details>
-<div class="privacy">开始前请取得课堂录音许可。音频片段将发送至识别服务，原文与术语将发送至翻译服务；页面不保存音频。笔记暂存于此浏览器，可随时清空。</div>
+<div class="privacy">开始前请取得课堂录音许可。音频片段与课堂文字将发送至已配置的 OpenAI 或 DeepSeek 服务；页面不保存音频。笔记暂存于此浏览器，可随时清空。</div>
 </aside>
 <section class="desk" aria-label="课堂字幕">
 <div class="toolbar"><div><span id="status" role="status">准备就绪</span><span id="timer">00:00</span></div><div class="view-tools"><button id="font" class="text-button" aria-label="切换大字字幕">大字</button><button id="focus" class="text-button">专注</button><button id="export" class="text-button">导出笔记</button></div></div>

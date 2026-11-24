@@ -99,7 +99,7 @@ async function start() {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('麦克风需要 HTTPS 或本机 localhost 页面，请使用受支持的浏览器。');
     if (!state.token) await connect();
     stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    audio = new AudioContext(); await audio.resume(); await audio.audioWorklet.addModule(new URL('./pcm-worklet.js', import.meta.url));
+    audio = new AudioContext({sampleRate:48000}); await audio.resume(); await audio.audioWorklet.addModule(new URL('./pcm-worklet.js', import.meta.url));
     source = audio.createMediaStreamSource(stream); processor = new AudioWorkletNode(audio,'classroom-pcm'); silent = audio.createGain(); silent.gain.value = 0;
     processor.port.onmessage = event => onPCM(event.data);
     source.connect(processor); processor.connect(silent); silent.connect(audio.destination);

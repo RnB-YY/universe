@@ -5,7 +5,7 @@
 ## 本机使用（Node 22 或更新）
 
 1. 在此目录将 `.env.example` 复制为 `.env`。
-2. 仅在 `.env` 中填 `OPENAI_API_KEY` 和至少 12 位随机 `ACCESS_CODE`。可选填 `DEEPSEEK_API_KEY`，则文字翻译走 DeepSeek，语音识别仍走 OpenAI。
+2. 仅在 `.env` 中填 `DEEPSEEK_API_KEY`（或 `OPENAI_API_KEY`）和至少 12 位随机 `ACCESS_CODE`。只有 DeepSeek 密钥时，语音识别与中文翻译全部走 DeepSeek，不需要 OpenAI 余额。两个密钥都有时默认 OpenAI 识别、DeepSeek 翻译；可设 `TRANSCRIBE_PROVIDER=deepseek` 强制使用 DeepSeek 识别。失败不自动切换供应商。
 3. 运行 `npm start`，打开 <http://127.0.0.1:8787/classroom/>。
 4. 页面“连接设置”的服务地址留空，输入访问码，检查连接。取得课堂录音许可后点击“开始听课”。
 
@@ -24,7 +24,7 @@
 
 - Web Audio + AudioWorklet 采集单声道 PCM；音量阈值和短暂静音触发分段。静音不提交。近距离清晰收音最可靠；安静说话可能漏识别，长句硬切可能损失上下文。暂停后关闭麦克风，最后片段继续处理。
 - 音频仅在内存中排队和上传，不写入磁盘。浏览器本地暂存双语文字、课程名称、术语和计时，刷新可恢复；“清空本课”会删除本课文字。访问设备的人可能看到这些笔记。
-- 音频与术语发往 OpenAI；识别文字与术语发往 OpenAI 或 DeepSeek。供应商侧的数据处理以其实际账户条款为准。后端不记录课堂正文或音频。
+- DeepSeek 模式：音频发往 DeepSeek ASR（自动检测语言，支持韩语，不接受术语提示），识别文字与术语发往 DeepSeek 翻译（默认 `deepseek-flash`、关闭思考模式）。它是分段文件识别，不是流式识别。OpenAI 模式：音频与术语发往 OpenAI 识别；识别文字与术语发往 OpenAI 或 DeepSeek。供应商侧的数据处理以其实际账户条款为准。后端不记录课堂正文或音频。
 - 音频失败时显示对应片段时间并暂停；不自动重传，以免重复扣费。翻译失败保留韩语，可仅重试文字翻译。识别失败片段不会伪装成成功笔记，也不保留音频供恢复。
 - 排队六段时自动暂停；队列中的音频需等待处理，离开页面前请等处理结束并导出。已提交但网页断开时仍可能产生费用。
 
@@ -32,4 +32,4 @@
 
 `npm test`：访问码、来源限制、禁止读取私密文件、WAV 验证、模拟识别与翻译、术语传递、持久化时长限制、保留原文和并发锁测试。模拟测试不代表真实 API 或麦克风验证通过。
 
-官方接口参考：[OpenAI 语音识别](https://developers.openai.com/api/docs/guides/speech-to-text)、[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)。
+官方接口参考：[OpenAI 语音识别](https://developers.openai.com/api/docs/guides/speech-to-text)、[DeepSeek 语音识别](https://api-docs.deepseek.com/guides/asr/)、[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)。
