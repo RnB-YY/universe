@@ -39,3 +39,14 @@ test('DeepSeek ASR failures do not trigger paid fallback to another provider',as
  const urls=[];const s=await setup(t,{env:{DEEPSEEK_API_KEY:'fake-deepseek-key',TRANSCRIBE_PROVIDER:'deepseek'},fetcher:async url=>{urls.push(url);return Response.json({error:'provider details'},{status:429});}});
  const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav'});assert.equal(r.status,502);assert.deepEqual(urls,['https://api.deepseek.com/v1/tools/asr']);assert.match((await r.json()).error,/额度不足或请求过多/);
 });
+test('source event is sent while translation is still blocked',async t=>{
+ let release;const gate=new Promise(resolve=>release=resolve);t.after(()=>release());
+ const s=await setup(t,{fetcher:async url=>{if(url.includes('/transcriptions'))return Response.json({text:'원문이 먼저 보입니다.'});await gate;return Response.json({choices:[{message:{content:'先显示原文。'}}]});}});
+ const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav',Accept:'application/x-ndjson'});assert.equal(r.status,200);const reader=r.body.getReader();const first=await reader.read();const initial=new TextDecoder().decode(first.value);assert.match(initial,/"type":"source"/);assert.doesNotMatch(initial,/"type":"translation"/);release();let rest='';while(true){const next=await reader.read();if(next.done)break;rest+=new TextDecoder().decode(next.value);}assert.match(rest,/"type":"translation"/);assert.match(rest,/"type":"done"/);assert.match(rest,/translationMs/);
+});
+test('streamed translation failures preserve the source event and finish explicitly',async t=>{
+ const s=await setup(t,{fetcher:async url=>url.includes('/transcriptions')?Response.json({text:'안녕하세요.'}):Response.json({error:'private details'},{status:429})});const r=await s.request('/api/chunk',wav(),await s.session(),{'Content-Type':'audio/wav',Accept:'application/x-ndjson'});const events=(await r.text()).trim().split('\n').map(line=>JSON.parse(line));assert.equal(events[0].source,'안녕하세요.');assert.equal(events[1].type,'translation-error');assert.equal(events[2].type,'done');assert.doesNotMatch(JSON.stringify(events),/private details/);
+});
+test('next translation receives only bounded earlier source context',async t=>{
+ const s=await setup(t,{env:{DAILY_AUDIO_MINUTES:'1'}});const token=await s.session();await (await s.request('/api/chunk',wav(),token,{'Content-Type':'audio/wav'})).json();await new Promise(resolve=>setTimeout(resolve,310));await (await s.request('/api/chunk',wav(),token,{'Content-Type':'audio/wav'})).json();const first=JSON.parse(JSON.parse(s.calls[1].init.body).messages[1].content);const second=JSON.parse(JSON.parse(s.calls[3].init.body).messages[1].content);assert.deepEqual(first.context,[]);assert.deepEqual(second.context,['장소 기억은 감각 경험과 연결됩니다.']);
+});

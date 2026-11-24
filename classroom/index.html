@@ -9,8 +9,14 @@
 <aside>
 <div class="section-label">这堂课</div><label for="course">课程名称</label><input id="course" maxlength="100" placeholder="例如：景观与场所记忆">
 <div class="language"><span>自动识别</span><span class="bridge">译成</span><strong>简体中文</strong></div>
+<details class="capture-settings" open><summary>收音与字幕</summary>
+<label for="microphone">麦克风</label><select id="microphone"><option value="">系统默认麦克风</option></select><button id="mic-refresh" class="text-button">刷新设备</button>
+<label class="check-label"><input id="noise" type="checkbox" checked>开启降噪</label>
+<button id="mic-check" class="secondary">录 5 秒检查收音</button><audio id="mic-playback" controls hidden></audio><p class="hint" id="mic-check-hint">仅本机回放，不上传、不消耗 API。请听人声是否清楚；可关闭降噪再比较。</p>
+<label for="segment-mode">字幕节奏</label><select id="segment-mode"><option value="responsive">流畅优先 · 最长 6 秒一段</option><option value="complete">完整句优先 · 最长 10 秒一段</option></select><p class="hint">停顿时会提前识别。原文先显示，译文随后补上。短段响应更快，长段通常保留更多上下文。</p>
+</details>
 <label for="terms">课程术语 <span>每行一组，最多 2,000 字</span></label><textarea id="terms" rows="5" maxlength="2000" placeholder="장소 기억 = 场所记忆&#10;감각 경험 = 感官体验&#10;건강한 노화 = 健康老龄化"></textarea>
-<p class="hint">识别和翻译会参考术语，仍可能出现误听或误译。</p>
+<p class="hint">术语帮助翻译统一用词；DeepSeek 语音识别暂不接受术语提示。原文有误时，先检查收音或识别。</p>
 <details id="settings"><summary>连接设置 <span id="connection">未连接</span></summary><label for="endpoint">翻译服务地址</label><input id="endpoint" type="url" placeholder="https://你的翻译服务"><label for="access">访问码</label><input id="access" type="password" autocomplete="off" placeholder="由服务所有者设置"><button id="connect" class="secondary">检查连接</button><p class="hint">这里只填写服务地址和访问码。API 密钥由后端保管。</p></details>
 <div class="privacy">开始前请取得课堂录音许可。音频片段与课堂文字将发送至已配置的 OpenAI 或 DeepSeek 服务；页面不保存音频。笔记暂存于此浏览器，可随时清空。</div>
 </aside>
