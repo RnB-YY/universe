@@ -1,0 +1,4 @@
+.env
+.usage.json
+.usage.json.tmp
+node_modules/

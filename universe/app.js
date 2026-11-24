@@ -10,6 +10,13 @@ const artifactClose = document.getElementById('artifactClose');
 
 
 const artifacts = {
+  classroom: {
+    type: 'LEARNING TOOL · 学习工具',
+    title: '听课之间 · 韩中课堂字幕',
+    meta: '2026 · 韩中双语 · 个人试用版',
+    description: '韩语课堂分段识别、中文字幕、课程术语与笔记导出。可先体验字幕示例，真实听课需连接已配置的翻译服务。',
+    links: [['打开课堂字幕', '../classroom/']]
+  },
   jia2025: {
     type: 'PAPER REVIEW · 论文研读',
     title: '公园距离、居住条件与老年人健康 · Jia（2025）研读',
@@ -102,12 +109,13 @@ const artifacts = {
 
 // One taxonomy record per project; files remain grouped in artifacts.links.
 const taxonomy = {
- about: {label:'关于我', categories:['个人简介','研究方向']},
+ about: {label:'关于我', categories:['个人简介','研究方向','学习工具']},
  academic: {label:'学术研究', categories:['硕士论文研究','课程发表','文献阅读']},
  portfolio: {label:'设计作品', categories:['作品集项目','视觉实验','空间设计']},
  archive: {label:'资料收藏', categories:['朋友分享','参考案例','待整理资料']}
 };
 const projectIndex = [
+ {id:'classroom',world:'about',category:'学习工具',language:'中文',year:'2026'},
  {id:'jia2025',world:'academic',category:'文献阅读',language:'韩语',year:'2026'},
  {id:'parkplan20261118',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
  {id:'parkplan',world:'academic',category:'硕士论文研究',language:'韩语',year:'2026'},
