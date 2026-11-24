@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>听课之间 · 韩中课堂字幕</title><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>听课之间 · 多语言课堂字幕</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <header><a class="brand" href="../universe/">YOO SANGHO <span>／ 学习工具</span></a><span class="edition">CLASSROOM COMPANION</span></header>
 <main>
-<section class="intro"><div><p class="eyebrow" lang="ko">한국어를 듣고, 중국어로 이해하다</p><h1>听课<span>之间</span><small>让理解，跟上课堂。</small></h1></div><p class="intro-note">听见韩语，读懂中文。<br>留住每一句值得记下的话。</p></section>
+<section class="intro"><div><p class="eyebrow">自动识别语言 · 中文课堂字幕</p><h1>听课<span>之间</span><small>让理解，跟上课堂。</small></h1></div><p class="intro-note">听见原文，读懂中文。<br>留住每一句值得记下的话。</p></section>
 <div class="workspace">
 <aside>
 <div class="section-label">这堂课</div><label for="course">课程名称</label><input id="course" maxlength="100" placeholder="例如：景观与场所记忆">
-<div class="language"><span lang="ko">한국어</span><span class="bridge">译成</span><strong>简体中文</strong></div>
+<div class="language"><span>自动识别</span><span class="bridge">译成</span><strong>简体中文</strong></div>
 <label for="terms">课程术语 <span>每行一组，最多 2,000 字</span></label><textarea id="terms" rows="5" maxlength="2000" placeholder="장소 기억 = 场所记忆&#10;감각 경험 = 感官体验&#10;건강한 노화 = 健康老龄化"></textarea>
 <p class="hint">识别和翻译会参考术语，仍可能出现误听或误译。</p>
 <details id="settings"><summary>连接设置 <span id="connection">未连接</span></summary><label for="endpoint">翻译服务地址</label><input id="endpoint" type="url" placeholder="https://你的翻译服务"><label for="access">访问码</label><input id="access" type="password" autocomplete="off" placeholder="由服务所有者设置"><button id="connect" class="secondary">检查连接</button><p class="hint">这里只填写服务地址和访问码。API 密钥由后端保管。</p></details>
@@ -18,7 +18,7 @@
 <div class="toolbar"><div><span id="status" role="status">准备就绪</span><span id="timer">00:00</span></div><div class="view-tools"><button id="font" class="text-button" aria-label="切换大字字幕">大字</button><button id="focus" class="text-button">专注</button><button id="export" class="text-button">导出笔记</button></div></div>
 <div id="notice" role="status" hidden></div>
 <div id="transcript" tabindex="0" aria-label="双语笔记">
-<div id="empty"><div class="sound-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><h2>把注意力留给课堂</h2><p>点击“开始听课”，韩语原文和中文译文<br>会按顺序出现在这里。</p><button id="demo" class="text-button">先体验字幕示例</button><span class="empty-caption">示例不使用麦克风，也不产生 API 费用</span></div>
+<div id="empty"><div class="sound-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><h2>把注意力留给课堂</h2><p>点击“开始听课”，自动识别语言，<br>原文和中文译文会按顺序出现在这里。</p><button id="demo" class="text-button">先体验字幕示例</button><span class="empty-caption">示例不使用麦克风，也不产生 API 费用</span></div>
 </div>
 <div class="control-bar"><div class="listen"><div class="meter" aria-label="麦克风音量"><span id="level"></span></div><span id="capture-label">麦克风尚未开启</span></div><button id="start" class="primary">开始听课</button><button id="stop" class="secondary" disabled>暂停</button></div>
 <div class="footnote"><span id="count">0 条笔记</span><span>短句分段翻译 · 译文会稍有延迟</span><button id="clear" class="text-button">清空本课</button></div>

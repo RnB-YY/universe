@@ -12,9 +12,9 @@ const artifactClose = document.getElementById('artifactClose');
 const artifacts = {
   classroom: {
     type: 'LEARNING TOOL · 学习工具',
-    title: '听课之间 · 韩中课堂字幕',
-    meta: '2026 · 韩中双语 · 个人试用版',
-    description: '韩语课堂分段识别、中文字幕、课程术语与笔记导出。可先体验字幕示例，真实听课需连接已配置的翻译服务。',
+    title: '听课之间 · 多语言课堂字幕',
+    meta: '2026 · 自动识别语言 · 个人试用版',
+    description: '自动识别课堂语言，显示原文和中文字幕，支持课程术语与笔记导出。可先体验字幕示例，真实听课需连接已配置的翻译服务。',
     links: [['打开课堂字幕', '../classroom/']]
   },
   jia2025: {

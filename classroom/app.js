@@ -16,8 +16,8 @@ function render() {
     const el = document.createElement('article'); el.className = `entry${row.error ? ' failed' : ''}`;
     const meta = document.createElement('div'); meta.className = 'entry-meta';
     const time = document.createElement('span'); time.textContent = clock(row.time);
-    const tag = document.createElement('span'); tag.textContent = row.demo ? '示例 · 非课堂录音' : '韩语 / 中文'; meta.append(time, tag);
-    const ko = document.createElement('p'); ko.className = 'source'; ko.lang = 'ko'; ko.textContent = row.source;
+    const tag = document.createElement('span'); tag.textContent = row.demo ? '示例 · 非课堂录音' : '原文 / 中文'; meta.append(time, tag);
+    const ko = document.createElement('p'); ko.className = 'source'; ko.lang = row.demo ? (row.language || 'ko') : 'und'; ko.textContent = row.source;
     const zh = document.createElement('p'); zh.className = 'translation'; zh.textContent = row.translation || row.error || '正在翻译…';
     el.append(meta, ko, zh);
     if (row.error && !row.demo) { const retry = document.createElement('button'); retry.className = 'retry'; retry.textContent = '重试此句翻译'; retry.onclick = async () => { retry.disabled = true; try { const result = await api('/api/translate', { text: row.source, terms: $('terms').value }); row.translation = result.translation; delete row.error; save(); } catch(e) { notice(e.message); } finally { render(); } }; el.append(retry); }
@@ -120,13 +120,13 @@ async function stop(sendLast = true) {
 $('start').onclick = start; $('stop').onclick = ()=>stop();
 $('demo').onclick = () => { state.rows = [
   {source:'오늘은 감각 경험과 장소 기억의 관계에 대해 이야기하겠습니다.',translation:'今天我们来讨论感官体验与场所记忆之间的关系。',time:0,demo:true},
-  {source:'같은 공간이라도 빗소리나 냄새에 따라 다르게 기억될 수 있습니다.',translation:'即使是同一个空间，也可能因为雨声或气味而留下不同的记忆。',time:8,demo:true},
-  {source:'중요한 것은 개별 감각뿐만 아니라, 여러 감각이 함께 작용하는 방식입니다.',translation:'重要的不只是单独的感官，还有多种感官共同作用的方式。',time:17,demo:true}
+  {source:'The same place can be remembered differently through sound and smell.',translation:'同一个场所也可能因声音和气味而留下不同的记忆。',time:8,demo:true,language:'en'},
+  {source:'大切なのは、複数の感覚がどのように一緒に働くかです。',translation:'重要的是，多种感官如何共同发挥作用。',time:17,demo:true,language:'ja'}
 ]; save(); render(); status('字幕示例'); notice('正在展示预设示例，没有录音或调用 API。'); };
 $('font').onclick=()=>{document.body.classList.toggle('large');$('font').textContent=document.body.classList.contains('large')?'标准字':'大字';};
 $('focus').onclick=()=>{document.body.classList.toggle('focus');$('focus').textContent=document.body.classList.contains('focus')?'退出专注':'专注';window.scrollTo({top:0,behavior:'instant'});};
 $('clear').onclick=()=>{if(state.running||state.starting||state.busy||state.draining){notice('请先暂停，并等待已有片段处理完成。');return;}if(state.rows.length&&!confirm('清空这堂课的本地笔记？需要保留时，请先导出。'))return;state.rows=[];state.elapsed=0;$('timer').textContent='00:00';notice();status('准备就绪');save();render();};
-$('export').onclick=()=>{if(!state.rows.length){notice('还没有可以导出的笔记。');return;}const title=$('course').value.trim()||'课堂双语笔记';const text=`# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n${state.rows.some(r=>r.demo)?'\n注意：包含预设字幕示例。\n':''}\n${state.rows.map(r=>`[${clock(r.time)}]${r.demo?'（示例）':''}\n韩语：${r.source}\n中文：${r.translation||r.error||'待翻译'}\n`).join('\n')}\n---\n自动识别与翻译，请结合课堂原意核对。\n`;const url=URL.createObjectURL(new Blob(['\uFEFF',text],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`${title.replace(/[<>:"/\\|?*]/g,'_')}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('export').onclick=()=>{if(!state.rows.length){notice('还没有可以导出的笔记。');return;}const title=$('course').value.trim()||'课堂双语笔记';const text=`# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n${state.rows.some(r=>r.demo)?'\n注意：包含预设字幕示例。\n':''}\n${state.rows.map(r=>`[${clock(r.time)}]${r.demo?'（示例）':''}\n原文：${r.source}\n中文：${r.translation||r.error||'待翻译'}\n`).join('\n')}\n---\n自动识别与翻译，请结合课堂原意核对。\n`;const url=URL.createObjectURL(new Blob(['\uFEFF',text],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`${title.replace(/[<>:"/\\|?*]/g,'_')}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 for(const id of ['course','terms']) $(id).addEventListener('change',save);
 for(const id of ['endpoint','access']) $(id).addEventListener('change',()=>{state.token='';$('connection').textContent='未连接';});
 window.addEventListener('beforeunload',event=>{if(state.running||state.busy){event.preventDefault();event.returnValue='';}});
