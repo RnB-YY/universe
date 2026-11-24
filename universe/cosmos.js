@@ -759,7 +759,7 @@ function measureLabels() {
     // Size the resting label only: the hover description is collapsed but still wide.
     if (label) p.label = {w: Math.max(...[...label.querySelectorAll('b, small')].map(el => el.offsetWidth)), h: label.offsetHeight};
   });
-  obstacles = [...document.querySelectorAll('.orbit-copy h1, .orbit-intro, .site-header .identity, .site-header .header-actions')]
+  obstacles = [...document.querySelectorAll('.orbit-copy h1, .orbit-intro, .site-header .identity, .site-header .header-actions, .toolcraft')]
     .map(el => el.getBoundingClientRect())
     .filter(r => r.width && r.height)
     .map(r => ({x:r.left - 12, y:r.top - 8, w:r.width + 24, h:r.height + 16}));
